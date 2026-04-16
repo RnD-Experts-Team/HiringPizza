@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
@@ -14,7 +14,8 @@ return new class extends Migration
             $table->string('contact_name', 100);
             $table->enum('contact_type', ['email', 'phone', 'emergency_contact']);
             $table->string('contact_value');
-            $table->boolean('is_primary')->default(false);
+            $table->boolean('is_primary')->default(false);
+            $table->timestamps();
         });
     }
 

@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
@@ -12,7 +12,8 @@ return new class extends Migration {
             $table->foreignId('employee_id')->constrained('employees')->cascadeOnDelete();
             $table->decimal('base_pay', 10, 2);
             $table->decimal('performance_pay', 10, 2);
-            $table->date('effective_date');
+            $table->date('effective_date');
+            $table->timestamps();
         });
     }
 

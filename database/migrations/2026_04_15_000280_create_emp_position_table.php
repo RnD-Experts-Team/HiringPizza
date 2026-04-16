@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
@@ -12,7 +12,8 @@ return new class extends Migration
             $table->id();
             $table->foreignId('position_id')->constrained('positions')->restrictOnDelete();
             $table->foreignId('employee_id')->constrained('employees')->restrictOnDelete();
-            $table->date('effective_date');
+            $table->date('effective_date');
+            $table->timestamps();
         });
     }
 

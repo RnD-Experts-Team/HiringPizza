@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
@@ -13,7 +13,8 @@ return new class extends Migration {
             $table->text('account_number');
             $table->text('routing_number');
             $table->enum('account_type', ['checking', 'savings']);
-            $table->date('effective_date');
+            $table->date('effective_date');
+            $table->timestamps();
         });
     }
 

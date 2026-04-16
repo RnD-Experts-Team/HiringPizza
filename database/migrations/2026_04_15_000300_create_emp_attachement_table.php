@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
@@ -11,7 +11,8 @@ return new class extends Migration
         Schema::create('emp_attachement', function (Blueprint $table) {
             $table->id();
             $table->foreignId('type_id')->constrained('attachements_types')->restrictOnDelete();
-            $table->foreignId('emp_id')->constrained('employees')->restrictOnDelete();
+            $table->foreignId('emp_id')->constrained('employees')->restrictOnDelete();
+            $table->timestamps();
         });
     }
 

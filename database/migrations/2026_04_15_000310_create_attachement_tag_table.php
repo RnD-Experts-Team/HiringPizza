@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
@@ -11,7 +11,8 @@ return new class extends Migration
         Schema::create('attachement_tag', function (Blueprint $table) {
             $table->id();
             $table->foreignId('tag_id')->constrained('tags')->restrictOnDelete();
-            $table->foreignId('attachement_id')->constrained('attachements_types')->restrictOnDelete();
+            $table->foreignId('attachement_id')->constrained('attachements_types')->restrictOnDelete();
+            $table->timestamps();
         });
     }
 

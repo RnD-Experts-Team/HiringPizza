@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
@@ -18,7 +18,8 @@ return new class extends Migration
             $table->string('state', 100);
             $table->string('zip_code', 20);
             $table->string('country', 100)->default('US');
-            $table->boolean('is_primary')->default(false);
+            $table->boolean('is_primary')->default(false);
+            $table->timestamps();
         });
     }
 

@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
@@ -12,8 +12,9 @@ return new class extends Migration {
             $table->foreignId('employee_id')->constrained('employees')->cascadeOnDelete();
             $table->enum('status', ['hired', 'resigned', 'terminated', 'rehired', 'OJE']);
             $table->date('effective_date');
-            $table->foreignId('store_id')->nullable()->constrained('store')->nullOnDelete();
-            $table->text('notes')->nullable();
+            $table->foreignId('store_id')->nullable()->constrained('stores')->nullOnDelete();
+            $table->text('notes')->nullable();
+            $table->timestamps();
         });
     }
 

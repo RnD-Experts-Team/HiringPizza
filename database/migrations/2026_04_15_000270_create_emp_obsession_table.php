@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
@@ -15,7 +15,8 @@ return new class extends Migration {
             $table->string('image_path')->nullable();
             $table->enum('religion', ['Christianity', 'Islam', 'Judaism', 'Buddhism', 'Hinduism', 'Other'])->nullable();
             $table->enum('race', ['Caucasian', 'African American', 'Hispanic', 'Asian', 'Native American', 'Other'])->nullable();
-            $table->text('notes')->nullable();
+            $table->text('notes')->nullable();
+            $table->timestamps();
         });
     }
 
