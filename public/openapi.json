@@ -472,31 +472,6 @@
                     },
                     "422": { "description": "Validation error" }
                 }
-            },
-            "delete": {
-                "tags": ["Employee Workflow"],
-                "summary": "Delete employee",
-                "parameters": [
-                    { "$ref": "#/components/parameters/storeNumber" },
-                    { "$ref": "#/components/parameters/employee" }
-                ],
-                "requestBody": {
-                    "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "required": ["actor_user_id"],
-                                "properties": {
-                                    "actor_user_id": { "type": "integer" }
-                                }
-                            }
-                        }
-                    }
-                },
-                "responses": {
-                    "204": { "description": "Employee deleted" }
-                }
             }
         },
         "/v1/stores/{storeNumber}/employees/{employee}/status": {
