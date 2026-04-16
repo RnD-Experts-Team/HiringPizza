@@ -1,0 +1,930 @@
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "HiringPizza Workforce API",
+        "version": "1.0.0",
+        "description": "Workflow-first API for workforce management. Employee operations are store-scoped by store number. Global catalog endpoints are intentionally not store-scoped."
+    },
+    "servers": [
+        {
+            "url": "/api"
+        }
+    ],
+    "tags": [
+        {
+            "name": "Employee Workflow"
+        },
+        {
+            "name": "Reference Catalog"
+        }
+    ],
+    "paths": {
+        "/v1/reference-catalog": {
+            "get": {
+                "tags": ["Reference Catalog"],
+                "summary": "Read global reference catalog",
+                "description": "Returns positions, marital statuses, id types, attachment types, and tags in one response.",
+                "responses": {
+                    "200": {
+                        "description": "Catalog payload",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ReferenceCatalogResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "tags": ["Reference Catalog"],
+                "summary": "Sync global reference catalog",
+                "description": "Single endpoint to create, update, and optionally delete catalog rows.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ReferenceCatalogSyncRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Catalog synchronized",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ReferenceCatalogResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    }
+                }
+            }
+        },
+        "/v1/stores/{storeNumber}/employees": {
+            "get": {
+                "tags": ["Employee Workflow"],
+                "summary": "List employees with advanced filtering",
+                "description": "Store-scoped listing with broad filtering, sorting, and pagination options.",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/storeNumber"
+                    },
+                    {
+                        "name": "q",
+                        "in": "query",
+                        "schema": { "type": "string" }
+                    },
+                    {
+                        "name": "employee_id",
+                        "in": "query",
+                        "schema": { "type": "integer" }
+                    },
+                    {
+                        "name": "first_name",
+                        "in": "query",
+                        "schema": { "type": "string" }
+                    },
+                    {
+                        "name": "middle_name",
+                        "in": "query",
+                        "schema": { "type": "string" }
+                    },
+                    {
+                        "name": "last_name",
+                        "in": "query",
+                        "schema": { "type": "string" }
+                    },
+                    {
+                        "name": "ssn",
+                        "in": "query",
+                        "schema": { "type": "string" }
+                    },
+                    {
+                        "name": "ssn_last4",
+                        "in": "query",
+                        "schema": { "type": "string", "maxLength": 4 }
+                    },
+                    {
+                        "name": "gender",
+                        "in": "query",
+                        "schema": { "$ref": "#/components/schemas/Gender" }
+                    },
+                    {
+                        "name": "employment_type",
+                        "in": "query",
+                        "schema": {
+                            "$ref": "#/components/schemas/EmploymentType"
+                        }
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "schema": {
+                            "$ref": "#/components/schemas/EmployeeStatus"
+                        }
+                    },
+                    {
+                        "name": "status_in[]",
+                        "in": "query",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/components/schemas/EmployeeStatus"
+                            }
+                        }
+                    },
+                    {
+                        "name": "position_id",
+                        "in": "query",
+                        "schema": { "type": "integer" }
+                    },
+                    {
+                        "name": "position_ids[]",
+                        "in": "query",
+                        "schema": {
+                            "type": "array",
+                            "items": { "type": "integer" }
+                        }
+                    },
+                    {
+                        "name": "marital_id",
+                        "in": "query",
+                        "schema": { "type": "integer" }
+                    },
+                    {
+                        "name": "id_type_id",
+                        "in": "query",
+                        "schema": { "type": "integer" }
+                    },
+                    {
+                        "name": "attachment_type_id",
+                        "in": "query",
+                        "schema": { "type": "integer" }
+                    },
+                    {
+                        "name": "day_of_week",
+                        "in": "query",
+                        "schema": { "$ref": "#/components/schemas/DayOfWeek" }
+                    },
+                    {
+                        "name": "shift_type",
+                        "in": "query",
+                        "schema": { "$ref": "#/components/schemas/ShiftType" }
+                    },
+                    {
+                        "name": "base_pay_min",
+                        "in": "query",
+                        "schema": { "type": "number", "format": "float" }
+                    },
+                    {
+                        "name": "base_pay_max",
+                        "in": "query",
+                        "schema": { "type": "number", "format": "float" }
+                    },
+                    {
+                        "name": "performance_pay_min",
+                        "in": "query",
+                        "schema": { "type": "number", "format": "float" }
+                    },
+                    {
+                        "name": "performance_pay_max",
+                        "in": "query",
+                        "schema": { "type": "number", "format": "float" }
+                    },
+                    {
+                        "name": "effective_pay_from",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "effective_pay_to",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "birth_from",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "birth_to",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "race",
+                        "in": "query",
+                        "schema": { "$ref": "#/components/schemas/Race" }
+                    },
+                    {
+                        "name": "religion",
+                        "in": "query",
+                        "schema": { "$ref": "#/components/schemas/Religion" }
+                    },
+                    {
+                        "name": "account_type",
+                        "in": "query",
+                        "schema": { "$ref": "#/components/schemas/AccountType" }
+                    },
+                    {
+                        "name": "has_primary_email",
+                        "in": "query",
+                        "schema": { "type": "boolean" }
+                    },
+                    {
+                        "name": "has_primary_phone",
+                        "in": "query",
+                        "schema": { "type": "boolean" }
+                    },
+                    {
+                        "name": "is_active",
+                        "in": "query",
+                        "schema": { "type": "boolean" }
+                    },
+                    {
+                        "name": "created_from",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "created_to",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "updated_from",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "updated_to",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "sort_by",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "id",
+                                "first_name",
+                                "last_name",
+                                "created_at",
+                                "updated_at",
+                                "employment_type",
+                                "gender"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "sort_dir",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": ["asc", "desc"]
+                        }
+                    },
+                    {
+                        "name": "per_page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100
+                        }
+                    },
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Paginated employees"
+                    },
+                    "404": {
+                        "description": "Store not found"
+                    }
+                }
+            },
+            "post": {
+                "tags": ["Employee Workflow"],
+                "summary": "Create employee via full workflow payload",
+                "description": "Single endpoint to create an employee and nested data in one transaction.",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/storeNumber"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/EmployeeWorkflowRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Employee created"
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    }
+                }
+            }
+        },
+        "/v1/stores/{storeNumber}/employees/{employee}": {
+            "get": {
+                "tags": ["Employee Workflow"],
+                "summary": "Get full employee workflow view",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/storeNumber"
+                    },
+                    {
+                        "$ref": "#/components/parameters/employee"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Employee payload"
+                    },
+                    "404": {
+                        "description": "Not found"
+                    }
+                }
+            },
+            "put": {
+                "tags": ["Employee Workflow"],
+                "summary": "Update employee via full workflow payload",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/storeNumber"
+                    },
+                    {
+                        "$ref": "#/components/parameters/employee"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/EmployeeWorkflowRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Employee updated"
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    }
+                }
+            },
+            "delete": {
+                "tags": ["Employee Workflow"],
+                "summary": "Delete employee",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/storeNumber"
+                    },
+                    {
+                        "$ref": "#/components/parameters/employee"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["actor_user_id"],
+                                "properties": {
+                                    "actor_user_id": {
+                                        "type": "integer"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "204": {
+                        "description": "Employee deleted"
+                    }
+                }
+            }
+        },
+        "/v1/stores/{storeNumber}/employees/{employee}/status": {
+            "patch": {
+                "tags": ["Employee Workflow"],
+                "summary": "Change employee status",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/storeNumber"
+                    },
+                    {
+                        "$ref": "#/components/parameters/employee"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["actor_user_id", "status"],
+                                "properties": {
+                                    "actor_user_id": { "type": "integer" },
+                                    "status": {
+                                        "$ref": "#/components/schemas/EmployeeStatus"
+                                    },
+                                    "effective_date": {
+                                        "type": "string",
+                                        "format": "date"
+                                    },
+                                    "notes": { "type": "string" }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Status changed"
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "parameters": {
+            "storeNumber": {
+                "name": "storeNumber",
+                "in": "path",
+                "required": true,
+                "schema": {
+                    "type": "string"
+                },
+                "description": "Store number identifier used for scoping employee workflow routes."
+            },
+            "employee": {
+                "name": "employee",
+                "in": "path",
+                "required": true,
+                "schema": {
+                    "type": "integer"
+                }
+            }
+        },
+        "schemas": {
+            "Gender": {
+                "type": "string",
+                "enum": ["male", "female"]
+            },
+            "EmploymentType": {
+                "type": "string",
+                "enum": ["W2", "1099"]
+            },
+            "EmployeeStatus": {
+                "type": "string",
+                "enum": ["hired", "resigned", "terminated", "rehired", "OJE"]
+            },
+            "DayOfWeek": {
+                "type": "string",
+                "enum": [
+                    "sunday",
+                    "monday",
+                    "tuesday",
+                    "wednesday",
+                    "thursday",
+                    "friday",
+                    "saturday"
+                ]
+            },
+            "ShiftType": {
+                "type": "string",
+                "enum": ["PM", "AM", "OP"]
+            },
+            "AccountType": {
+                "type": "string",
+                "enum": ["checking", "savings"]
+            },
+            "Religion": {
+                "type": "string",
+                "enum": [
+                    "Christianity",
+                    "Islam",
+                    "Judaism",
+                    "Buddhism",
+                    "Hinduism",
+                    "Other"
+                ]
+            },
+            "Race": {
+                "type": "string",
+                "enum": [
+                    "Caucasian",
+                    "African American",
+                    "Hispanic",
+                    "Asian",
+                    "Native American",
+                    "Other"
+                ]
+            },
+            "ReferenceCatalogSyncRequest": {
+                "type": "object",
+                "properties": {
+                    "positions": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": { "type": "integer" },
+                                "lebel": { "type": "string" },
+                                "description": { "type": "string" }
+                            }
+                        }
+                    },
+                    "position_delete_ids": {
+                        "type": "array",
+                        "items": { "type": "integer" }
+                    },
+                    "marital_statuses": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": { "type": "integer" },
+                                "label": { "type": "string" },
+                                "description": { "type": "string" }
+                            }
+                        }
+                    },
+                    "marital_status_delete_ids": {
+                        "type": "array",
+                        "items": { "type": "integer" }
+                    },
+                    "id_types": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": { "type": "integer" },
+                                "label": { "type": "string" },
+                                "description": { "type": "string" }
+                            }
+                        }
+                    },
+                    "id_type_delete_ids": {
+                        "type": "array",
+                        "items": { "type": "integer" }
+                    },
+                    "attachment_types": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": { "type": "integer" },
+                                "label": { "type": "string" },
+                                "description": { "type": "string" }
+                            }
+                        }
+                    },
+                    "attachment_type_delete_ids": {
+                        "type": "array",
+                        "items": { "type": "integer" }
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": { "type": "integer" },
+                                "label": { "type": "string" }
+                            }
+                        }
+                    },
+                    "tag_delete_ids": {
+                        "type": "array",
+                        "items": { "type": "integer" }
+                    }
+                }
+            },
+            "ReferenceCatalogResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "positions": {
+                                "type": "array",
+                                "items": { "type": "object" }
+                            },
+                            "marital_statuses": {
+                                "type": "array",
+                                "items": { "type": "object" }
+                            },
+                            "id_types": {
+                                "type": "array",
+                                "items": { "type": "object" }
+                            },
+                            "attachment_types": {
+                                "type": "array",
+                                "items": { "type": "object" }
+                            },
+                            "tags": {
+                                "type": "array",
+                                "items": { "type": "object" }
+                            }
+                        }
+                    }
+                }
+            },
+            "EmployeeWorkflowRequest": {
+                "type": "object",
+                "required": ["actor_user_id"],
+                "properties": {
+                    "actor_user_id": { "type": "integer" },
+                    "first_name": { "type": "string" },
+                    "middle_name": { "type": "string", "nullable": true },
+                    "last_name": { "type": "string" },
+                    "gender": { "$ref": "#/components/schemas/Gender" },
+                    "ssn": { "type": "string" },
+                    "employment_type": {
+                        "$ref": "#/components/schemas/EmploymentType"
+                    },
+                    "status_history": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": ["status", "effective_date"],
+                            "properties": {
+                                "status": {
+                                    "$ref": "#/components/schemas/EmployeeStatus"
+                                },
+                                "effective_date": {
+                                    "type": "string",
+                                    "format": "date"
+                                },
+                                "store_id": {
+                                    "type": "integer",
+                                    "nullable": true
+                                },
+                                "notes": { "type": "string", "nullable": true }
+                            }
+                        }
+                    },
+                    "pay_history": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": [
+                                "base_pay",
+                                "performance_pay",
+                                "effective_date"
+                            ],
+                            "properties": {
+                                "base_pay": {
+                                    "type": "number",
+                                    "format": "float"
+                                },
+                                "performance_pay": {
+                                    "type": "number",
+                                    "format": "float"
+                                },
+                                "effective_date": {
+                                    "type": "string",
+                                    "format": "date"
+                                }
+                            }
+                        }
+                    },
+                    "contacts": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": [
+                                "contact_name",
+                                "contact_type",
+                                "contact_value"
+                            ],
+                            "properties": {
+                                "contact_name": { "type": "string" },
+                                "contact_type": {
+                                    "type": "string",
+                                    "enum": [
+                                        "email",
+                                        "phone",
+                                        "emergency_contact"
+                                    ]
+                                },
+                                "contact_value": { "type": "string" },
+                                "is_primary": { "type": "boolean" }
+                            }
+                        }
+                    },
+                    "addresses": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": [
+                                "address_name",
+                                "address_1",
+                                "city",
+                                "state",
+                                "zip_code"
+                            ],
+                            "properties": {
+                                "address_name": { "type": "string" },
+                                "address_1": { "type": "string" },
+                                "address_2": {
+                                    "type": "string",
+                                    "nullable": true
+                                },
+                                "city": { "type": "string" },
+                                "state": { "type": "string" },
+                                "zip_code": { "type": "string" },
+                                "country": { "type": "string" },
+                                "is_primary": { "type": "boolean" }
+                            }
+                        }
+                    },
+                    "availability": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": ["day_of_week", "shift_type"],
+                            "properties": {
+                                "day_of_week": {
+                                    "$ref": "#/components/schemas/DayOfWeek"
+                                },
+                                "shift_type": {
+                                    "$ref": "#/components/schemas/ShiftType"
+                                },
+                                "times": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "required": [
+                                            "available_from",
+                                            "available_to"
+                                        ],
+                                        "properties": {
+                                            "available_from": {
+                                                "type": "string",
+                                                "pattern": "^[0-9]{2}:[0-9]{2}$"
+                                            },
+                                            "available_to": {
+                                                "type": "string",
+                                                "pattern": "^[0-9]{2}:[0-9]{2}$"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "financial_info": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": [
+                                "account_number",
+                                "routing_number",
+                                "account_type",
+                                "effective_date"
+                            ],
+                            "properties": {
+                                "account_number": { "type": "string" },
+                                "routing_number": { "type": "string" },
+                                "account_type": {
+                                    "$ref": "#/components/schemas/AccountType"
+                                },
+                                "effective_date": {
+                                    "type": "string",
+                                    "format": "date"
+                                }
+                            }
+                        }
+                    },
+                    "employee_ids": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": ["id_type_id", "id_value"],
+                            "properties": {
+                                "id_type_id": { "type": "integer" },
+                                "id_value": { "type": "string" }
+                            }
+                        }
+                    },
+                    "obsession": {
+                        "type": "object",
+                        "properties": {
+                            "t_shirt": {
+                                "type": "string",
+                                "enum": [
+                                    "L",
+                                    "M",
+                                    "S",
+                                    "XL",
+                                    "XS",
+                                    "2XL",
+                                    "3XL",
+                                    "4XL",
+                                    "5XL",
+                                    "6XL"
+                                ]
+                            },
+                            "birth_date": {
+                                "type": "string",
+                                "format": "date"
+                            },
+                            "image_path": {
+                                "type": "string",
+                                "nullable": true
+                            },
+                            "religion": {
+                                "$ref": "#/components/schemas/Religion"
+                            },
+                            "race": { "$ref": "#/components/schemas/Race" },
+                            "notes": { "type": "string", "nullable": true }
+                        }
+                    },
+                    "positions": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": ["position_id", "effective_date"],
+                            "properties": {
+                                "position_id": { "type": "integer" },
+                                "effective_date": {
+                                    "type": "string",
+                                    "format": "date"
+                                }
+                            }
+                        }
+                    },
+                    "marital_history": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": ["marital_id", "effective_date"],
+                            "properties": {
+                                "marital_id": { "type": "integer" },
+                                "effective_date": {
+                                    "type": "string",
+                                    "format": "date"
+                                }
+                            }
+                        }
+                    },
+                    "attachments": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": ["type_id"],
+                            "properties": {
+                                "type_id": { "type": "integer" }
+                            }
+                        }
+                    },
+                    "store_assignments": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": ["store_id", "effective_date"],
+                            "properties": {
+                                "store_id": { "type": "integer" },
+                                "effective_date": {
+                                    "type": "string",
+                                    "format": "date"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
