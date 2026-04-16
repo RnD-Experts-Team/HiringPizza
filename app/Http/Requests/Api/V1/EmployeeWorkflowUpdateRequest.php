@@ -79,7 +79,7 @@ class EmployeeWorkflowUpdateRequest extends FormRequest
             'positions.*.effective_date' => ['required', 'date'],
 
             'marital_history' => ['sometimes', 'array'],
-            'marital_history.*.marital_id' => ['required', 'integer', 'exists:marital_status,id'],
+            'marital_history.*.marital_id' => ['required', 'integer', 'exists:marital_statuses,id'],
             'marital_history.*.effective_date' => ['required', 'date'],
 
             'attachments' => ['sometimes', 'array'],
