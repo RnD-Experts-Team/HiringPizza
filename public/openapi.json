@@ -400,7 +400,7 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "$ref": "#/components/schemas/EmployeeWorkflowRequest"
+                                "$ref": "#/components/schemas/EmployeeWorkflowStoreRequest"
                             }
                         }
                     }
@@ -454,7 +454,7 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "$ref": "#/components/schemas/EmployeeWorkflowRequest"
+                                "$ref": "#/components/schemas/EmployeeWorkflowUpdateRequest"
                             }
                         }
                     }
@@ -737,63 +737,303 @@
                     "message": { "type": "string" }
                 }
             },
-            "EmployeeWorkflowRequest": {
+            "EmployeeStatusHistoryInput": {
+                "type": "object",
+                "required": ["status", "effective_date"],
+                "properties": {
+                    "status": { "$ref": "#/components/schemas/EmployeeStatus" },
+                    "effective_date": { "type": "string", "format": "date" },
+                    "store_id": { "type": "integer" },
+                    "notes": { "type": "string", "nullable": true }
+                }
+            },
+            "EmployeePayHistoryInput": {
+                "type": "object",
+                "required": ["base_pay", "performance_pay", "effective_date"],
+                "properties": {
+                    "base_pay": { "type": "number", "minimum": 0 },
+                    "performance_pay": { "type": "number", "minimum": 0 },
+                    "effective_date": { "type": "string", "format": "date" }
+                }
+            },
+            "EmployeeContactInput": {
+                "type": "object",
+                "required": ["contact_name", "contact_type", "contact_value"],
+                "properties": {
+                    "contact_name": { "type": "string", "maxLength": 100 },
+                    "contact_type": {
+                        "type": "string",
+                        "enum": ["email", "phone", "emergency_contact"]
+                    },
+                    "contact_value": { "type": "string", "maxLength": 255 },
+                    "is_primary": { "type": "boolean" }
+                }
+            },
+            "EmployeeAddressInput": {
+                "type": "object",
+                "required": [
+                    "address_name",
+                    "address_1",
+                    "city",
+                    "state",
+                    "zip_code"
+                ],
+                "properties": {
+                    "address_name": { "type": "string", "maxLength": 100 },
+                    "address_1": { "type": "string", "maxLength": 255 },
+                    "address_2": {
+                        "type": "string",
+                        "nullable": true,
+                        "maxLength": 255
+                    },
+                    "city": { "type": "string", "maxLength": 100 },
+                    "state": { "type": "string", "maxLength": 100 },
+                    "zip_code": { "type": "string", "maxLength": 20 },
+                    "country": { "type": "string", "maxLength": 100 },
+                    "is_primary": { "type": "boolean" }
+                }
+            },
+            "EmployeeAvailabilityTimeInput": {
+                "type": "object",
+                "required": ["available_from", "available_to"],
+                "properties": {
+                    "available_from": {
+                        "type": "string",
+                        "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                    },
+                    "available_to": {
+                        "type": "string",
+                        "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                    }
+                }
+            },
+            "EmployeeAvailabilityInput": {
+                "type": "object",
+                "required": ["day_of_week", "shift_type"],
+                "properties": {
+                    "day_of_week": { "$ref": "#/components/schemas/DayOfWeek" },
+                    "shift_type": { "$ref": "#/components/schemas/ShiftType" },
+                    "times": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                            "$ref": "#/components/schemas/EmployeeAvailabilityTimeInput"
+                        }
+                    }
+                }
+            },
+            "EmployeeFinancialInfoInput": {
+                "type": "object",
+                "required": [
+                    "account_number",
+                    "routing_number",
+                    "account_type",
+                    "effective_date"
+                ],
+                "properties": {
+                    "account_number": { "type": "string", "maxLength": 255 },
+                    "routing_number": { "type": "string", "maxLength": 255 },
+                    "account_type": {
+                        "$ref": "#/components/schemas/AccountType"
+                    },
+                    "effective_date": { "type": "string", "format": "date" }
+                }
+            },
+            "EmployeeIdInput": {
+                "type": "object",
+                "required": ["id_type_id", "id_value"],
+                "properties": {
+                    "id_type_id": { "type": "integer" },
+                    "id_value": { "type": "string", "maxLength": 255 }
+                }
+            },
+            "EmployeeObsessionInput": {
+                "type": "object",
+                "required": ["birth_date"],
+                "properties": {
+                    "t_shirt": {
+                        "type": "string",
+                        "enum": [
+                            "L",
+                            "M",
+                            "S",
+                            "XL",
+                            "XS",
+                            "2XL",
+                            "3XL",
+                            "4XL",
+                            "5XL",
+                            "6XL"
+                        ],
+                        "nullable": true
+                    },
+                    "birth_date": { "type": "string", "format": "date" },
+                    "image_path": {
+                        "type": "string",
+                        "nullable": true,
+                        "maxLength": 255
+                    },
+                    "religion": {
+                        "allOf": [{ "$ref": "#/components/schemas/Religion" }],
+                        "nullable": true
+                    },
+                    "race": {
+                        "allOf": [{ "$ref": "#/components/schemas/Race" }],
+                        "nullable": true
+                    },
+                    "notes": { "type": "string", "nullable": true }
+                }
+            },
+            "EmployeePositionInput": {
+                "type": "object",
+                "required": ["position_id", "effective_date"],
+                "properties": {
+                    "position_id": { "type": "integer" },
+                    "effective_date": { "type": "string", "format": "date" }
+                }
+            },
+            "EmployeeMaritalHistoryInput": {
+                "type": "object",
+                "required": ["marital_id", "effective_date"],
+                "properties": {
+                    "marital_id": { "type": "integer" },
+                    "effective_date": { "type": "string", "format": "date" }
+                }
+            },
+            "EmployeeAttachmentInput": {
+                "type": "object",
+                "required": ["type_id"],
+                "properties": {
+                    "type_id": { "type": "integer" }
+                }
+            },
+            "EmployeeStoreAssignmentInput": {
+                "type": "object",
+                "required": ["store_id", "effective_date"],
+                "properties": {
+                    "store_id": { "type": "integer" },
+                    "effective_date": { "type": "string", "format": "date" }
+                }
+            },
+            "EmployeeWorkflowRequestBase": {
                 "type": "object",
                 "properties": {
-                    "first_name": { "type": "string" },
-                    "middle_name": { "type": "string", "nullable": true },
-                    "last_name": { "type": "string" },
+                    "first_name": { "type": "string", "maxLength": 100 },
+                    "middle_name": {
+                        "type": "string",
+                        "nullable": true,
+                        "maxLength": 100
+                    },
+                    "last_name": { "type": "string", "maxLength": 100 },
                     "gender": { "$ref": "#/components/schemas/Gender" },
-                    "ssn": { "type": "string" },
+                    "ssn": { "type": "string", "maxLength": 20 },
                     "employment_type": {
                         "$ref": "#/components/schemas/EmploymentType"
                     },
                     "status_history": {
                         "type": "array",
-                        "items": { "type": "object" }
+                        "items": {
+                            "$ref": "#/components/schemas/EmployeeStatusHistoryInput"
+                        }
                     },
                     "pay_history": {
                         "type": "array",
-                        "items": { "type": "object" }
+                        "items": {
+                            "$ref": "#/components/schemas/EmployeePayHistoryInput"
+                        }
                     },
                     "contacts": {
                         "type": "array",
-                        "items": { "type": "object" }
+                        "items": {
+                            "$ref": "#/components/schemas/EmployeeContactInput"
+                        }
                     },
                     "addresses": {
                         "type": "array",
-                        "items": { "type": "object" }
+                        "items": {
+                            "$ref": "#/components/schemas/EmployeeAddressInput"
+                        }
                     },
                     "availability": {
                         "type": "array",
-                        "items": { "type": "object" }
+                        "items": {
+                            "$ref": "#/components/schemas/EmployeeAvailabilityInput"
+                        }
                     },
                     "financial_info": {
                         "type": "array",
-                        "items": { "type": "object" }
+                        "items": {
+                            "$ref": "#/components/schemas/EmployeeFinancialInfoInput"
+                        }
                     },
                     "employee_ids": {
                         "type": "array",
-                        "items": { "type": "object" }
+                        "items": {
+                            "$ref": "#/components/schemas/EmployeeIdInput"
+                        }
                     },
-                    "obsession": { "type": "object", "nullable": true },
+                    "obsession": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/EmployeeObsessionInput"
+                            }
+                        ],
+                        "nullable": true
+                    },
                     "positions": {
                         "type": "array",
-                        "items": { "type": "object" }
+                        "items": {
+                            "$ref": "#/components/schemas/EmployeePositionInput"
+                        }
                     },
                     "marital_history": {
                         "type": "array",
-                        "items": { "type": "object" }
+                        "items": {
+                            "$ref": "#/components/schemas/EmployeeMaritalHistoryInput"
+                        }
                     },
                     "attachments": {
                         "type": "array",
-                        "items": { "type": "object" }
+                        "items": {
+                            "$ref": "#/components/schemas/EmployeeAttachmentInput"
+                        }
                     },
                     "store_assignments": {
                         "type": "array",
-                        "items": { "type": "object" }
+                        "items": {
+                            "$ref": "#/components/schemas/EmployeeStoreAssignmentInput"
+                        }
                     }
                 }
+            },
+            "EmployeeWorkflowStoreRequest": {
+                "allOf": [
+                    {
+                        "$ref": "#/components/schemas/EmployeeWorkflowRequestBase"
+                    },
+                    {
+                        "type": "object",
+                        "required": [
+                            "first_name",
+                            "last_name",
+                            "gender",
+                            "ssn",
+                            "employment_type"
+                        ],
+                        "properties": {
+                            "status_history": {
+                                "type": "array",
+                                "minItems": 1,
+                                "items": {
+                                    "$ref": "#/components/schemas/EmployeeStatusHistoryInput"
+                                }
+                            }
+                        }
+                    }
+                ]
+            },
+            "EmployeeWorkflowUpdateRequest": {
+                "$ref": "#/components/schemas/EmployeeWorkflowRequestBase"
             },
             "EmployeeWorkflowEntity": {
                 "type": "object",
