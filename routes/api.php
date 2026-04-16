@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\Api\V1\EmployeeWorkflowController;
 use App\Http\Controllers\Api\V1\ReferenceCatalogController;
+use App\Http\Controllers\Api\V1\SeparationRequestController;
+use App\Http\Controllers\Api\V1\HiringRequestController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->middleware('auth:sanctum')->group(function (): void {
@@ -29,5 +31,18 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function (): void {
             Route::patch('employees/{employee}/status', [EmployeeWorkflowController::class, 'changeStatus'])
                 ->name('api.v1.stores.employees.change-status');
 
+            // Separation Request Workflow
+            Route::post('separation-requests', [SeparationRequestController::class, 'store'])
+                ->name('api.v1.stores.separation-requests.store');
+
+            Route::post('separation-requests/{separationRequest}/decision', [SeparationRequestController::class, 'decide'])
+                ->name('api.v1.stores.separation-requests.decide');
+
+            // Hiring Request Workflow
+            Route::post('hiring-requests', [HiringRequestController::class, 'store'])
+                ->name('api.v1.stores.hiring-requests.store');
+
+            Route::post('hiring-requests/{hiringRequest}/decision', [HiringRequestController::class, 'decide'])
+                ->name('api.v1.stores.hiring-requests.decide');
         });
 });

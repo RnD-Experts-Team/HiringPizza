@@ -84,6 +84,7 @@ class EmployeeWorkflowUpdateRequest extends FormRequest
 
             'attachments' => ['sometimes', 'array'],
             'attachments.*.type_id' => ['required', 'integer', 'exists:attachment_types,id'],
+            'attachments.*.file' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png,doc,docx', 'max:20480'],
 
             'store_assignments' => ['sometimes', 'array'],
             'store_assignments.*.store_id' => ['required', 'integer', 'exists:stores,id'],

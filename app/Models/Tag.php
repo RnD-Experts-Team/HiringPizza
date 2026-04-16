@@ -13,6 +13,6 @@ class Tag extends Model
 
     public function attachmentTypes(): BelongsToMany
     {
-        return $this->belongsToMany(AttachmentType::class, 'attachement_tag', 'tag_id', 'attachement_id');
+        return $this->belongsToMany(AttachmentType::class, 'attachment_tags', 'tag_id', 'attachement_id');
     }
 }

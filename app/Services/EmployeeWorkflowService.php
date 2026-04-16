@@ -22,6 +22,7 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 class EmployeeWorkflowService
 {
     public function resolveStoreByNumber(string $storeNumber): Store
@@ -397,12 +398,26 @@ class EmployeeWorkflowService
 
     private function syncAttachments(Employee $employee, array $rows): void
     {
+        $existingAttachments = EmployeeAttachment::query()->where('emp_id', $employee->id)->get();
+
+        foreach ($existingAttachments as $attachment) {
+            if ($attachment->file_path) {
+                Storage::disk('public')->delete($attachment->file_path);
+            }
+        }
+
         EmployeeAttachment::query()->where('emp_id', $employee->id)->delete();
 
         foreach ($rows as $row) {
+            $storedPath = $row['file']->store('employee-attachments/' . $employee->id, 'public');
+
             EmployeeAttachment::query()->create([
                 'emp_id' => $employee->id,
                 'type_id' => $row['type_id'],
+                'file_path' => $storedPath,
+                'original_name' => $row['file']->getClientOriginalName(),
+                'mime_type' => $row['file']->getClientMimeType(),
+                'file_size' => $row['file']->getSize(),
             ]);
         }
     }

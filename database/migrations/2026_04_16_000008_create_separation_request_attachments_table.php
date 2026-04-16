@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
@@ -7,21 +7,21 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration {
     public function up(): void
     {
-        Schema::create('employee_attachments', function (Blueprint $table) {
+        Schema::create('separation_request_attachments', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('type_id')->constrained('attachment_types')->restrictOnDelete();
-            $table->foreignId('emp_id')->constrained('employees')->restrictOnDelete();
-            $table->string('file_path')->nullable();
-            $table->string('original_name')->nullable();
+            $table->foreignId('separation_request_id')->constrained('separation_requests')->onDelete('cascade');
+            $table->string('file_path');
+            $table->string('original_name');
             $table->string('mime_type')->nullable();
             $table->unsignedBigInteger('file_size')->nullable();
-
             $table->timestamps();
+
+            $table->index('separation_request_id');
         });
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('employee_attachments');
+        Schema::dropIfExists('separation_request_attachments');
     }
 };
