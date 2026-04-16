@@ -4,7 +4,7 @@ use App\Http\Controllers\Api\V1\EmployeeWorkflowController;
 use App\Http\Controllers\Api\V1\ReferenceCatalogController;
 use Illuminate\Support\Facades\Route;
 
-Route::prefix('v1')->group(function (): void {
+Route::prefix('v1')->middleware('auth:sanctum')->group(function (): void {
     Route::get('reference-catalog', [ReferenceCatalogController::class, 'index'])
         ->name('api.v1.reference-catalog.index');
 
