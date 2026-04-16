@@ -77,12 +77,12 @@ class Employee extends Model
 
     public function maritals(): HasMany
     {
-        return $this->hasMany(EmployeeMarital::class);
+        return $this->hasMany(EmployeeMarital::class, 'emp_id');
     }
 
     public function attachments(): HasMany
     {
-        return $this->hasMany(EmployeeAttachment::class);
+        return $this->hasMany(EmployeeAttachment::class, 'emp_id');
     }
 
     public function auditLogs(): HasMany
