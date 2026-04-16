@@ -9,8 +9,6 @@ class EmployeeAvailabilityTime extends Model
 {
     protected $table = 'employee_availability_times';
 
-    public $timestamps = false;
-
     protected $guarded = [];
 
     public function availabilityDay(): BelongsTo

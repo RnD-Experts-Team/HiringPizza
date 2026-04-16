@@ -7,9 +7,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class MaritalStatus extends Model
 {
-    protected $table = 'marital_status';
-
-    public $timestamps = false;
+    protected $table = 'marital_statuses';
 
     protected $guarded = [];
 

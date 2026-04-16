@@ -15,8 +15,7 @@ return new class extends Migration {
             $table->enum('gender', ['male', 'female']);
             $table->text('ssn');
             $table->enum('employment_type', ['W2', '1099']);
-            $table$table->timestamps();
-            $table->timestamp('updated_at')->useCurrent()->useCurrentOnUpdate();
+            $table->timestamps();
         });
     }
 

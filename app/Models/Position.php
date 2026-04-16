@@ -9,8 +9,6 @@ class Position extends Model
 {
     protected $table = 'positions';
 
-    public $timestamps = false;
-
     protected $guarded = [];
 
     public function employeePositions(): HasMany

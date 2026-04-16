@@ -17,11 +17,6 @@ class EmployeeIndexRequest extends FormRequest
         return [
             'employee_id' => ['sometimes', 'integer'],
             'q' => ['sometimes', 'string', 'max:120'],
-            'first_name' => ['sometimes', 'string', 'max:100'],
-            'middle_name' => ['sometimes', 'string', 'max:100'],
-            'last_name' => ['sometimes', 'string', 'max:100'],
-            'ssn' => ['sometimes', 'string', 'max:20'],
-            'ssn_last4' => ['sometimes', 'string', 'max:4'],
             'gender' => ['sometimes', Rule::in(['male', 'female'])],
             'employment_type' => ['sometimes', Rule::in(['W2', '1099'])],
 
@@ -32,9 +27,9 @@ class EmployeeIndexRequest extends FormRequest
             'position_id' => ['sometimes', 'integer', 'exists:positions,id'],
             'position_ids' => ['sometimes', 'array'],
             'position_ids.*' => ['required', 'integer', 'exists:positions,id'],
-            'marital_id' => ['sometimes', 'integer', 'exists:marital_status,id'],
+            'marital_id' => ['sometimes', 'integer', 'exists:marital_statuses,id'],
             'id_type_id' => ['sometimes', 'integer', 'exists:id_types,id'],
-            'attachment_type_id' => ['sometimes', 'integer', 'exists:attachements_types,id'],
+            'attachment_type_id' => ['sometimes', 'integer', 'exists:attachment_types,id'],
 
             'day_of_week' => ['sometimes', Rule::in(['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'])],
             'shift_type' => ['sometimes', Rule::in(['PM', 'AM', 'OP'])],

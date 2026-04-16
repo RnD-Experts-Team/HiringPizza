@@ -9,8 +9,6 @@ class IdType extends Model
 {
     protected $table = 'id_types';
 
-    public $timestamps = false;
-
     protected $guarded = [];
 
     public function employeeIds(): HasMany

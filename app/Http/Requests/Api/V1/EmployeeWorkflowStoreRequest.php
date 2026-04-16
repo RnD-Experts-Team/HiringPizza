@@ -26,7 +26,7 @@ class EmployeeWorkflowStoreRequest extends FormRequest
             'status_history' => ['sometimes', 'array', 'min:1'],
             'status_history.*.status' => ['required', Rule::in(['hired', 'resigned', 'terminated', 'rehired', 'OJE'])],
             'status_history.*.effective_date' => ['required', 'date'],
-            'status_history.*.store_id' => ['nullable', 'integer', 'exists:store,id'],
+            'status_history.*.store_id' => ['nullable', 'integer', 'exists:stores,id'],
             'status_history.*.notes' => ['nullable', 'string'],
 
             'pay_history' => ['sometimes', 'array'],
@@ -84,10 +84,10 @@ class EmployeeWorkflowStoreRequest extends FormRequest
             'marital_history.*.effective_date' => ['required', 'date'],
 
             'attachments' => ['sometimes', 'array'],
-            'attachments.*.type_id' => ['required', 'integer', 'exists:attachements_types,id'],
+            'attachments.*.type_id' => ['required', 'integer', 'exists:attachment_types,id'],
 
             'store_assignments' => ['sometimes', 'array'],
-            'store_assignments.*.store_id' => ['required', 'integer', 'exists:store,id'],
+            'store_assignments.*.store_id' => ['required', 'integer', 'exists:stores,id'],
             'store_assignments.*.effective_date' => ['required', 'date'],
         ];
     }

@@ -7,9 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class EmployeePayHistory extends Model
 {
-    protected $table = 'employee_pay_history';
-
-    public $timestamps = false;
+    protected $table = 'employee_pay_histories';
 
     protected $guarded = [];
 

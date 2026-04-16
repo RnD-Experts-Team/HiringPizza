@@ -7,9 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class EmployeeMarital extends Model
 {
-    protected $table = 'emp_marital';
-
-    public $timestamps = false;
+    protected $table = 'employee_maritals';
 
     protected $guarded = [];
 

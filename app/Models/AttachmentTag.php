@@ -7,9 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class AttachmentTag extends Model
 {
-    protected $table = 'attachement_tag';
-
-    public $timestamps = false;
+    protected $table = 'attachment_tags';
 
     protected $guarded = [];
 

@@ -10,10 +10,6 @@ class AuditLog extends Model
 {
     protected $table = 'audit_logs';
 
-    public $timestamps = true;
-
-    const UPDATED_AT = null;
-
     protected $guarded = [];
 
     protected function casts(): array

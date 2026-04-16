@@ -7,9 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class EmployeeAttachment extends Model
 {
-    protected $table = 'emp_attachement';
-
-    public $timestamps = false;
+    protected $table = 'employee_attachments';
 
     protected $guarded = [];
 

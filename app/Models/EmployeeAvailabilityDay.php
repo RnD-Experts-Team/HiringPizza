@@ -12,8 +12,6 @@ class EmployeeAvailabilityDay extends Model
 {
     protected $table = 'employee_availability_days';
 
-    public $timestamps = false;
-
     protected $guarded = [];
 
     protected function casts(): array

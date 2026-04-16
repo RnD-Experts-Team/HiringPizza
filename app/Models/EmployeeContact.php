@@ -10,8 +10,6 @@ class EmployeeContact extends Model
 {
     protected $table = 'employee_contacts';
 
-    public $timestamps = false;
-
     protected $guarded = [];
 
     protected function casts(): array

@@ -8,9 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class EmployeeFinancialInfo extends Model
 {
-    protected $table = 'employee_financial_info';
-
-    public $timestamps = false;
+    protected $table = 'employee_financial_infos';
 
     protected $guarded = [];
 

@@ -20,8 +20,8 @@ class EmployeeQueryService
 
         $perPage = min((int) ($filters['per_page'] ?? 25), 100);
 
-        if (!empty($filters['ssn']) || !empty($filters['ssn_last4'])) {
-            return $this->paginateWithInMemorySsnFilter($query, $filters, $perPage);
+        if ($this->queryContainsSsnSearch($filters)) {
+            return $this->paginateWithInMemoryQFilter($query, $filters, $perPage);
         }
 
         return $query->paginate($perPage)->withQueryString();
@@ -31,9 +31,6 @@ class EmployeeQueryService
     {
         $query
             ->when($filters['employee_id'] ?? null, fn(Builder $q, $v) => $q->where('id', $v))
-            ->when($filters['first_name'] ?? null, fn(Builder $q, $v) => $q->where('first_name', 'like', "%{$v}%"))
-            ->when($filters['middle_name'] ?? null, fn(Builder $q, $v) => $q->where('middle_name', 'like', "%{$v}%"))
-            ->when($filters['last_name'] ?? null, fn(Builder $q, $v) => $q->where('last_name', 'like', "%{$v}%"))
             ->when($filters['gender'] ?? null, fn(Builder $q, $v) => $q->where('gender', $v))
             ->when($filters['employment_type'] ?? null, fn(Builder $q, $v) => $q->where('employment_type', $v))
             ->when($filters['created_from'] ?? null, fn(Builder $q, $v) => $q->whereDate('created_at', '>=', $v))
@@ -42,15 +39,18 @@ class EmployeeQueryService
             ->when($filters['updated_to'] ?? null, fn(Builder $q, $v) => $q->whereDate('updated_at', '<=', $v));
 
         if (!empty($filters['q'])) {
-            $needle = $filters['q'];
+            $tokens = preg_split('/\s+/', trim((string) $filters['q'])) ?: [];
+            $textTokens = array_values(array_filter($tokens, fn(string $token) => preg_match('/[A-Za-z]/', $token) === 1));
 
-            $query->where(function (Builder $q) use ($needle) {
-                $q->where('first_name', 'like', "%{$needle}%")
-                    ->orWhere('middle_name', 'like', "%{$needle}%")
-                    ->orWhere('last_name', 'like', "%{$needle}%")
-                    ->orWhereRaw("CONCAT(first_name, ' ', last_name) like ?", ["%{$needle}%"])
-                    ->orWhereRaw("CONCAT(first_name, ' ', middle_name, ' ', last_name) like ?", ["%{$needle}%"]);
-            });
+            foreach ($textTokens as $token) {
+                $query->where(function (Builder $q) use ($token) {
+                    $q->where('first_name', 'like', "%{$token}%")
+                        ->orWhere('middle_name', 'like', "%{$token}%")
+                        ->orWhere('last_name', 'like', "%{$token}%")
+                        ->orWhereRaw("CONCAT(first_name, ' ', last_name) like ?", ["%{$token}%"])
+                        ->orWhereRaw("CONCAT(first_name, ' ', middle_name, ' ', last_name) like ?", ["%{$token}%"]);
+                });
+            }
         }
 
         $query
@@ -114,19 +114,40 @@ class EmployeeQueryService
         $query->orderBy($sortBy, $sortDir);
     }
 
-    private function paginateWithInMemorySsnFilter(Builder $query, array $filters, int $perPage): LengthAwarePaginator
+    private function queryContainsSsnSearch(array $filters): bool
     {
-        $ssn = isset($filters['ssn']) ? preg_replace('/\D+/', '', (string) $filters['ssn']) : null;
-        $ssnLast4 = isset($filters['ssn_last4']) ? preg_replace('/\D+/', '', (string) $filters['ssn_last4']) : null;
+        $q = trim((string) ($filters['q'] ?? ''));
 
-        $collection = $query->get()->filter(function (Employee $employee) use ($ssn, $ssnLast4): bool {
+        if ($q === '') {
+            return false;
+        }
+
+        $digits = preg_replace('/\D+/', '', $q);
+
+        return strlen($digits) >= 4;
+    }
+
+    private function paginateWithInMemoryQFilter(Builder $query, array $filters, int $perPage): LengthAwarePaginator
+    {
+        $q = trim((string) ($filters['q'] ?? ''));
+        $qDigits = preg_replace('/\D+/', '', $q);
+
+        $collection = $query->get()->filter(function (Employee $employee) use ($qDigits): bool {
             $candidate = preg_replace('/\D+/', '', (string) $employee->ssn);
 
-            if ($ssn !== null && $ssn !== '' && $candidate !== $ssn) {
-                return false;
+            if ($qDigits === '') {
+                return true;
             }
 
-            if ($ssnLast4 !== null && $ssnLast4 !== '' && !str_ends_with($candidate, $ssnLast4)) {
+            if (strlen($qDigits) >= 9) {
+                return $candidate === $qDigits;
+            }
+
+            if (strlen($qDigits) === 4) {
+                return str_ends_with($candidate, $qDigits);
+            }
+
+            if (!str_contains($candidate, $qDigits)) {
                 return false;
             }
 

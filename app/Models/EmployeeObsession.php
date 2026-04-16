@@ -10,9 +10,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class EmployeeObsession extends Model
 {
-    protected $table = 'emp_obsession';
-
-    public $timestamps = false;
+    protected $table = 'employee_obsessions';
 
     protected $guarded = [];
 

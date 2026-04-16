@@ -7,9 +7,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Store extends Model
 {
-    protected $table = 'store';
-
-    public $timestamps = false;
+    protected $table = 'stores';
 
     protected $guarded = [];
 

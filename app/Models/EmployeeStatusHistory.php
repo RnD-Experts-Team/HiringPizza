@@ -8,9 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class EmployeeStatusHistory extends Model
 {
-    protected $table = 'employee_status_history';
-
-    public $timestamps = false;
+    protected $table = 'employee_status_histories';
 
     protected $guarded = [];
 

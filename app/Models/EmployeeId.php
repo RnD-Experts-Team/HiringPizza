@@ -9,8 +9,6 @@ class EmployeeId extends Model
 {
     protected $table = 'employee_ids';
 
-    public $timestamps = false;
-
     protected $guarded = [];
 
     public function employee(): BelongsTo

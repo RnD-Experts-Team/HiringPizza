@@ -9,8 +9,6 @@ class EmployeeAddress extends Model
 {
     protected $table = 'employee_addresses';
 
-    public $timestamps = false;
-
     protected $guarded = [];
 
     protected function casts(): array

@@ -8,9 +8,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class AttachmentType extends Model
 {
-    protected $table = 'attachements_types';
-
-    public $timestamps = false;
+    protected $table = 'attachment_types';
 
     protected $guarded = [];
 
@@ -21,6 +19,6 @@ class AttachmentType extends Model
 
     public function tags(): BelongsToMany
     {
-        return $this->belongsToMany(Tag::class, 'attachement_tag', 'attachement_id', 'tag_id');
+        return $this->belongsToMany(Tag::class, 'attachment_tags', 'attachement_id', 'tag_id');
     }
 }
