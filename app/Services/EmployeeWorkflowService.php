@@ -21,7 +21,7 @@ use App\Models\Store;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
-
+use Illuminate\Support\Facades\Auth;
 class EmployeeWorkflowService
 {
     public function resolveStoreByNumber(string $storeNumber): Store
@@ -54,6 +54,7 @@ class EmployeeWorkflowService
             $this->syncMarital($employee, $data['marital_history'] ?? []);
             $this->syncAttachments($employee, $data['attachments'] ?? []);
 
+            $data['actor_user_id'] = Auth::id();
             $this->createAuditLog($employee, $data['actor_user_id'] ?? null, 'create', [
                 'store_number' => $store->store_number,
                 'workflow' => 'employee.create',
@@ -125,7 +126,7 @@ class EmployeeWorkflowService
             if (array_key_exists('attachments', $data)) {
                 $this->syncAttachments($employee, $data['attachments'] ?? []);
             }
-
+            $data['actor_user_id'] = Auth::id();
             $this->createAuditLog($employee, $data['actor_user_id'] ?? null, 'update', [
                 'store_number' => $store->store_number,
                 'workflow' => 'employee.update',
@@ -147,7 +148,7 @@ class EmployeeWorkflowService
                 'store_id' => $store->id,
                 'notes' => $data['notes'] ?? null,
             ]);
-
+            $data['actor_user_id'] = Auth::id();
             $this->createAuditLog($employee, $data['actor_user_id'] ?? null, 'status_change', [
                 'store_number' => $store->store_number,
                 'status' => $data['status'],

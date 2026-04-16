@@ -15,7 +15,6 @@ class EmployeeStatusChangeRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'actor_user_id' => ['required', 'integer', 'exists:users,id'],
             'status' => ['required', Rule::in(['hired', 'resigned', 'terminated', 'rehired', 'OJE'])],
             'effective_date' => ['nullable', 'date'],
             'notes' => ['nullable', 'string'],

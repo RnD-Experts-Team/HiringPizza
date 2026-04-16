@@ -15,7 +15,6 @@ class EmployeeWorkflowUpdateRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'actor_user_id' => ['required', 'integer', 'exists:users,id'],
             'first_name' => ['sometimes', 'string', 'max:100'],
             'middle_name' => ['nullable', 'string', 'max:100'],
             'last_name' => ['sometimes', 'string', 'max:100'],

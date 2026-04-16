@@ -488,9 +488,8 @@
                         "application/json": {
                             "schema": {
                                 "type": "object",
-                                "required": ["actor_user_id", "status"],
+                                "required": ["status"],
                                 "properties": {
-                                    "actor_user_id": { "type": "integer" },
                                     "status": {
                                         "$ref": "#/components/schemas/EmployeeStatus"
                                     },
@@ -740,9 +739,7 @@
             },
             "EmployeeWorkflowRequest": {
                 "type": "object",
-                "required": ["actor_user_id"],
                 "properties": {
-                    "actor_user_id": { "type": "integer" },
                     "first_name": { "type": "string" },
                     "middle_name": { "type": "string", "nullable": true },
                     "last_name": { "type": "string" },
