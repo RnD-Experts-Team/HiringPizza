@@ -7,7 +7,7 @@ use App\Http\Controllers\Api\V1\HiringRequestController;
 use App\Http\Controllers\Api\V1\WorkflowRequestController;
 use Illuminate\Support\Facades\Route;
 
-Route::prefix('v1')->middleware('auth:sanctum')->group(function (): void {
+Route::prefix('v1')->middleware('auth.token.store')->group(function (): void {
     Route::get('reference-catalog', [ReferenceCatalogController::class, 'index'])
         ->name('api.v1.reference-catalog.index');
 
