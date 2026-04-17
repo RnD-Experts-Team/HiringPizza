@@ -1301,11 +1301,13 @@
                         "nullable": true
                     },
                     "birth_date": { "type": "string", "format": "date" },
-                    "image_path": {
+                    "image": {
                         "type": "string",
+                        "format": "binary",
                         "nullable": true,
-                        "maxLength": 255
+                        "description": "Image file upload for obsession profile photo. The server stores the file and persists its path in image_path."
                     },
+
                     "religion": {
                         "allOf": [{ "$ref": "#/components/schemas/Religion" }],
                         "nullable": true

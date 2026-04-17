@@ -358,10 +358,28 @@ class EmployeeWorkflowService
 
     private function syncObsession(Employee $employee, ?array $row): void
     {
+        $existingObsession = EmployeeObsession::query()
+            ->where('employee_id', $employee->id)
+            ->first();
+
         if ($row === null) {
+            if ($existingObsession?->image_path) {
+                Storage::disk('public')->delete($existingObsession->image_path);
+            }
+
             EmployeeObsession::query()->where('employee_id', $employee->id)->delete();
 
             return;
+        }
+
+        $imagePath = $existingObsession?->image_path;
+
+        if (isset($row['image']) && $row['image'] instanceof UploadedFile) {
+            if ($existingObsession?->image_path) {
+                Storage::disk('public')->delete($existingObsession->image_path);
+            }
+
+            $imagePath = $row['image']->store('employee-obsessions/' . $employee->id, 'public');
         }
 
         EmployeeObsession::query()->updateOrCreate(
@@ -369,7 +387,7 @@ class EmployeeWorkflowService
             [
                 't_shirt' => $row['t_shirt'] ?? null,
                 'birth_date' => $row['birth_date'],
-                'image_path' => $row['image_path'] ?? null,
+                'image_path' => $imagePath,
                 'religion' => $row['religion'] ?? null,
                 'race' => $row['race'] ?? null,
                 'notes' => $row['notes'] ?? null,

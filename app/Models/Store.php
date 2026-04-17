@@ -10,7 +10,7 @@ class Store extends Model
     protected $table = 'stores';
 
     protected $guarded = [];
-
+    protected $fillable = ['id', 'store_number'];
     public function employeeStores(): HasMany
     {
         return $this->hasMany(EmployeeStore::class);

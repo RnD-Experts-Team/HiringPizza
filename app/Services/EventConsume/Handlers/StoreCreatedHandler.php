@@ -21,14 +21,12 @@ class StoreCreatedHandler implements EventHandlerInterface
         $storeIdString = $this->extractStoreIdString($storePayload);
 
         $metadata = data_get($storePayload, 'metadata');
-        $group = $this->extractGroup($metadata) ?? 69;
 
-        DB::transaction(function () use ($id, $storeIdString, $group) {
+        DB::transaction(function () use ($id, $storeIdString) {
             Store::query()->updateOrCreate(
                 ['id' => $id],
                 [
-                    'store' => $storeIdString,
-                    'group' => (int) $group,
+                    'store_number' => $storeIdString,
                 ]
             );
         });
@@ -37,13 +35,16 @@ class StoreCreatedHandler implements EventHandlerInterface
     private function extractStorePayload(array $event): array
     {
         $store = data_get($event, 'data.store');
-        if (is_array($store)) return $store;
+        if (is_array($store))
+            return $store;
 
         $store = data_get($event, 'store');
-        if (is_array($store)) return $store;
+        if (is_array($store))
+            return $store;
 
         $store = data_get($event, 'payload.store');
-        if (is_array($store)) return $store;
+        if (is_array($store))
+            return $store;
 
         throw new \Exception('StoreCreatedHandler: store payload not found in event');
     }
@@ -72,31 +73,14 @@ class StoreCreatedHandler implements EventHandlerInterface
         return 'UNKNOWN';
     }
 
-    private function extractGroup(mixed $metadata): ?int
-    {
-        if (!is_array($metadata)) {
-            return null;
-        }
-
-        foreach ($metadata as $key => $value) {
-            if (!is_string($key)) continue;
-
-            // "Group", "group", "GROUP_ID", "storeGroup", etc.
-            if (preg_match('/group/i', $key) === 1) {
-                if (is_int($value)) return $value;
-                if (is_string($value) && is_numeric(trim($value))) return (int) trim($value);
-                if (is_numeric($value)) return (int) $value;
-            }
-        }
-
-        return null;
-    }
-
     private function asInt(mixed $v): int
     {
-        if (is_int($v)) return $v;
-        if (is_string($v) && ctype_digit($v)) return (int) $v;
-        if (is_numeric($v)) return (int) $v;
+        if (is_int($v))
+            return $v;
+        if (is_string($v) && ctype_digit($v))
+            return (int) $v;
+        if (is_numeric($v))
+            return (int) $v;
         return 0;
     }
 }

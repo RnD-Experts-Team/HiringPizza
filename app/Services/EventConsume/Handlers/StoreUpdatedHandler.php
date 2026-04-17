@@ -31,9 +31,8 @@ class StoreUpdatedHandler implements EventHandlerInterface
         $isActiveTo = data_get($changed, 'is_active.to');
 
         // If metadata is present, try to extract group from it
-        $group = $this->extractGroup($metadataTo);
 
-        DB::transaction(function () use ($id, $group, $isActiveTo) {
+        DB::transaction(function () use ($id, $isActiveTo) {
             /** @var Store $store */
             $store = Store::query()->find($id);
 
@@ -47,15 +46,7 @@ class StoreUpdatedHandler implements EventHandlerInterface
 
             $update = [];
 
-            // Only update group if we extracted one from metadata
-            if ($group !== null) {
-                $update['group'] = (int) $group;
-            }
 
-            // Only update is_active if it was provided
-            if ($isActiveTo !== null) {
-                $update['is_active'] = (bool) $isActiveTo;
-            }
 
             if (!empty($update)) {
                 // If it's a new model instance with preset id
@@ -69,30 +60,14 @@ class StoreUpdatedHandler implements EventHandlerInterface
         });
     }
 
-    private function extractGroup(mixed $metadata): ?int
-    {
-        if (!is_array($metadata)) {
-            return null;
-        }
-
-        foreach ($metadata as $key => $value) {
-            if (!is_string($key)) continue;
-
-            if (preg_match('/group/i', $key) === 1) {
-                if (is_int($value)) return $value;
-                if (is_string($value) && is_numeric(trim($value))) return (int) trim($value);
-                if (is_numeric($value)) return (int) $value;
-            }
-        }
-
-        return null;
-    }
-
     private function asInt(mixed $v): int
     {
-        if (is_int($v)) return $v;
-        if (is_string($v) && ctype_digit($v)) return (int) $v;
-        if (is_numeric($v)) return (int) $v;
+        if (is_int($v))
+            return $v;
+        if (is_string($v) && ctype_digit($v))
+            return (int) $v;
+        if (is_numeric($v))
+            return (int) $v;
         return 0;
     }
 }
