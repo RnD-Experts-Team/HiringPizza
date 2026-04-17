@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Api\V1;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Validator;
 
 class HiringRequestDecisionRequest extends FormRequest
 {
@@ -20,24 +21,38 @@ class HiringRequestDecisionRequest extends FormRequest
         ];
     }
 
-    public function prepare(): void
+    protected function prepareForValidation(): void
     {
-        // Ensure employee_ids count matches number_hired
-        $this->merge();
+        $employeeIds = $this->input('employee_ids', []);
+
+        if (is_string($employeeIds)) {
+            $employeeIds = array_filter(array_map('trim', explode(',', $employeeIds)), fn(string $value) => $value !== '');
+        }
+
+        if (!is_array($employeeIds)) {
+            $employeeIds = [$employeeIds];
+        }
+
+        $this->merge([
+            'number_hired' => is_numeric($this->input('number_hired'))
+                ? (int) $this->input('number_hired')
+                : $this->input('number_hired'),
+            'employee_ids' => array_values($employeeIds),
+        ]);
     }
 
-    protected function passedValidation(): void
+    public function withValidator(Validator $validator): void
     {
-        $numberHired = $this->input('number_hired');
-        $employeeIds = (array) $this->input('employee_ids', []);
+        $validator->after(function (Validator $validator): void {
+            $numberHired = (int) $this->input('number_hired');
+            $employeeIds = (array) $this->input('employee_ids', []);
 
-        if (count($employeeIds) !== $numberHired) {
-            $this->validator->after(function ($validator) use ($numberHired) {
+            if (count($employeeIds) !== $numberHired) {
                 $validator->errors()->add(
                     'employee_ids',
                     "The number of employee_ids must equal number_hired ({$numberHired})"
                 );
-            });
-        }
+            }
+        });
     }
 }

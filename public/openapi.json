@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "HiringPizza Workforce API",
-        "version": "1.1.0",
+        "version": "1.2.0",
         "description": "Workflow-first API for workforce management. Employee operations are store-scoped by store number. Global catalog endpoints are not store-scoped."
     },
     "servers": [
@@ -12,6 +12,7 @@
     ],
     "tags": [
         { "name": "Employee Workflow" },
+        { "name": "Workflow Requests" },
         { "name": "Separation Request Workflow" },
         { "name": "Hiring Request Workflow" },
         { "name": "Reference Catalog" }
@@ -519,6 +520,272 @@
                             }
                         }
                     }
+                }
+            }
+        },
+        "/v1/stores/{storeNumber}/requests": {
+            "get": {
+                "tags": ["Workflow Requests"],
+                "summary": "List store workflow requests (hiring + separation)",
+                "description": "Returns a unified paginated feed across hiring and separation workflows with filtering by type, status, decision, ownership, and dates.",
+                "parameters": [
+                    { "$ref": "#/components/parameters/storeNumber" },
+                    {
+                        "name": "q",
+                        "in": "query",
+                        "description": "Free-text search. For separation: employee names and notes. For hiring: candidate fields and final notes.",
+                        "schema": { "type": "string" }
+                    },
+                    {
+                        "name": "request_type",
+                        "in": "query",
+                        "description": "Filter a single workflow type.",
+                        "schema": { "$ref": "#/components/schemas/RequestType" }
+                    },
+                    {
+                        "name": "request_types[]",
+                        "in": "query",
+                        "description": "Filter multiple workflow types.",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/components/schemas/RequestType"
+                            }
+                        }
+                    },
+                    {
+                        "name": "workflow_status",
+                        "in": "query",
+                        "description": "Filter a single derived workflow status.",
+                        "schema": {
+                            "$ref": "#/components/schemas/WorkflowRequestStatus"
+                        }
+                    },
+                    {
+                        "name": "workflow_statuses[]",
+                        "in": "query",
+                        "description": "Filter multiple derived workflow statuses.",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/components/schemas/WorkflowRequestStatus"
+                            }
+                        }
+                    },
+                    {
+                        "name": "decision",
+                        "in": "query",
+                        "description": "Filter latest decision value.",
+                        "schema": {
+                            "$ref": "#/components/schemas/RequestDecision"
+                        }
+                    },
+                    {
+                        "name": "decision_in[]",
+                        "in": "query",
+                        "description": "Filter by multiple latest decision values.",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/components/schemas/RequestDecision"
+                            }
+                        }
+                    },
+                    {
+                        "name": "separation_type",
+                        "in": "query",
+                        "schema": {
+                            "$ref": "#/components/schemas/SeparationType"
+                        }
+                    },
+                    {
+                        "name": "shift_type",
+                        "in": "query",
+                        "schema": { "$ref": "#/components/schemas/ShiftType" }
+                    },
+                    {
+                        "name": "availability_type",
+                        "in": "query",
+                        "schema": {
+                            "$ref": "#/components/schemas/AvailabilityType"
+                        }
+                    },
+                    {
+                        "name": "employee_id",
+                        "in": "query",
+                        "description": "Matches separation request employee or hired employee in hiring decision entries.",
+                        "schema": { "type": "integer" }
+                    },
+                    {
+                        "name": "requested_by_user_id",
+                        "in": "query",
+                        "schema": { "type": "integer" }
+                    },
+                    {
+                        "name": "decision_by_user_id",
+                        "in": "query",
+                        "schema": { "type": "integer" }
+                    },
+                    {
+                        "name": "desired_start_from",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "desired_start_to",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "final_working_from",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "final_working_to",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "created_from",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "created_to",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "decided_from",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "decided_to",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "sort_by",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "requested_at",
+                                "id",
+                                "final_working_day",
+                                "desired_start_date",
+                                "latest_decided_at"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "sort_dir",
+                        "in": "query",
+                        "schema": { "type": "string", "enum": ["asc", "desc"] }
+                    },
+                    {
+                        "name": "per_page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100
+                        }
+                    },
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "schema": { "type": "integer", "minimum": 1 }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Unified workflow request feed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/WorkflowRequestIndexResponse"
+                                },
+                                "example": {
+                                    "current_page": 1,
+                                    "data": [
+                                        {
+                                            "id": 91,
+                                            "request_type": "separation",
+                                            "store_id": 3,
+                                            "requested_by_user_id": 7,
+                                            "requested_at": "2026-04-17T09:30:00.000000Z",
+                                            "workflow_status": "pending",
+                                            "latest_decision": null,
+                                            "separation_request": {
+                                                "id": 91,
+                                                "store_id": 3,
+                                                "user_id": 7,
+                                                "employee_id": 44,
+                                                "separation_type": "resignation",
+                                                "final_working_day": "2026-04-30",
+                                                "termination_letter": null,
+                                                "termination_reason": null,
+                                                "termination_reason_details": null,
+                                                "resignation_reason": "personal_reasons",
+                                                "resignation_reason_details": null,
+                                                "attachments": [],
+                                                "additional_notes": "Submitted by manager",
+                                                "created_at": "2026-04-17T09:30:00.000000Z",
+                                                "updated_at": "2026-04-17T09:30:00.000000Z"
+                                            },
+                                            "hiring_request": null
+                                        },
+                                        {
+                                            "id": 105,
+                                            "request_type": "hiring",
+                                            "store_id": 3,
+                                            "requested_by_user_id": 11,
+                                            "requested_at": "2026-04-16T10:00:00.000000Z",
+                                            "workflow_status": "completed",
+                                            "latest_decision": {
+                                                "id": 35,
+                                                "decision": "completed",
+                                                "decided_by_user_id": 11,
+                                                "decided_at": "2026-04-17T11:15:00.000000Z",
+                                                "completed_at": "2026-04-17T11:15:00.000000Z",
+                                                "number_hired": 2,
+                                                "employee_ids": [88, 89]
+                                            },
+                                            "separation_request": null,
+                                            "hiring_request": {
+                                                "id": 105,
+                                                "store_id": 3,
+                                                "user_id": 11,
+                                                "employees_needed": 2,
+                                                "desired_start_date": "2026-05-05",
+                                                "final_notes": "Need AM coverage",
+                                                "created_at": "2026-04-16T10:00:00.000000Z",
+                                                "updated_at": "2026-04-16T10:00:00.000000Z",
+                                                "candidates": [],
+                                                "positions": [],
+                                                "decisions": []
+                                            }
+                                        }
+                                    ],
+                                    "first_page_url": "http://localhost/api/v1/stores/NY001/requests?page=1",
+                                    "from": 1,
+                                    "last_page": 1,
+                                    "last_page_url": "http://localhost/api/v1/stores/NY001/requests?page=1",
+                                    "links": [],
+                                    "next_page_url": null,
+                                    "path": "http://localhost/api/v1/stores/NY001/requests",
+                                    "per_page": 25,
+                                    "prev_page_url": null,
+                                    "to": 2,
+                                    "total": 2
+                                }
+                            }
+                        }
+                    },
+                    "404": { "description": "Store not found" }
                 }
             }
         },
@@ -1341,6 +1608,95 @@
                         "type": "array",
                         "items": {
                             "$ref": "#/components/schemas/EmployeeWorkflowEntity"
+                        }
+                    },
+                    "first_page_url": { "type": "string" },
+                    "from": { "type": ["integer", "null"] },
+                    "last_page": { "type": "integer" },
+                    "last_page_url": { "type": "string" },
+                    "links": { "type": "array", "items": { "type": "object" } },
+                    "next_page_url": { "type": ["string", "null"] },
+                    "path": { "type": "string" },
+                    "per_page": { "type": "integer" },
+                    "prev_page_url": { "type": ["string", "null"] },
+                    "to": { "type": ["integer", "null"] },
+                    "total": { "type": "integer" }
+                }
+            },
+            "RequestType": {
+                "type": "string",
+                "enum": ["separation", "hiring"]
+            },
+            "WorkflowRequestStatus": {
+                "type": "string",
+                "enum": ["pending", "rejected", "completed"]
+            },
+            "WorkflowRequestLatestDecision": {
+                "type": ["object", "null"],
+                "properties": {
+                    "id": { "type": "integer" },
+                    "decision": {
+                        "$ref": "#/components/schemas/RequestDecision"
+                    },
+                    "decided_by_user_id": { "type": "integer" },
+                    "decided_at": { "type": "string", "format": "date-time" },
+                    "completed_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time"
+                    },
+                    "notes": { "type": ["string", "null"] },
+                    "number_hired": { "type": "integer" },
+                    "employee_ids": {
+                        "type": "array",
+                        "items": { "type": "integer" }
+                    }
+                }
+            },
+            "WorkflowRequestFeedItem": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "integer" },
+                    "request_type": {
+                        "$ref": "#/components/schemas/RequestType"
+                    },
+                    "store_id": { "type": "integer" },
+                    "requested_by_user_id": { "type": "integer" },
+                    "requested_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "workflow_status": {
+                        "$ref": "#/components/schemas/WorkflowRequestStatus"
+                    },
+                    "latest_decision": {
+                        "$ref": "#/components/schemas/WorkflowRequestLatestDecision"
+                    },
+                    "separation_request": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/SeparationRequestEntity"
+                            }
+                        ],
+                        "nullable": true
+                    },
+                    "hiring_request": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/HiringRequestEntity"
+                            }
+                        ],
+                        "nullable": true
+                    }
+                }
+            },
+            "WorkflowRequestIndexResponse": {
+                "type": "object",
+                "properties": {
+                    "current_page": { "type": "integer" },
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/WorkflowRequestFeedItem"
                         }
                     },
                     "first_page_url": { "type": "string" },

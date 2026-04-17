@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\V1\EmployeeWorkflowController;
 use App\Http\Controllers\Api\V1\ReferenceCatalogController;
 use App\Http\Controllers\Api\V1\SeparationRequestController;
 use App\Http\Controllers\Api\V1\HiringRequestController;
+use App\Http\Controllers\Api\V1\WorkflowRequestController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->middleware('auth:sanctum')->group(function (): void {
@@ -32,6 +33,9 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function (): void {
                 ->name('api.v1.stores.employees.change-status');
 
             // Separation Request Workflow
+            Route::get('requests', [WorkflowRequestController::class, 'index'])
+                ->name('api.v1.stores.requests.index');
+
             Route::post('separation-requests', [SeparationRequestController::class, 'store'])
                 ->name('api.v1.stores.separation-requests.store');
 
