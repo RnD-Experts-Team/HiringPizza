@@ -122,7 +122,7 @@ class WorkflowRequestQueryService
             'store_id' => $request->store_id,
             'requested_by_user_id' => $request->user_id,
             'requested_at' => $request->created_at,
-            'workflow_status' => $this->resolveWorkflowStatus($latestDecision?->decision),
+            'workflow_status' => $this->resolveWorkflowStatus($latestDecision?->decision?->value),
             'latest_decision' => $this->mapLatestDecision($latestDecision),
             'separation_request' => $request,
             'hiring_request' => null,
@@ -157,7 +157,7 @@ class WorkflowRequestQueryService
 
         return [
             'id' => $decision->id,
-            'decision' => $decision->decision,
+            'decision' => $decision->decision?->value,
             'decided_by_user_id' => $decision->user_id,
             'decided_at' => $decision->created_at,
             'completed_at' => $decision->completed_at,
