@@ -51,11 +51,6 @@ class HiringRequestWorkflowService
                 ]);
             }
 
-            $this->createAuditLog($hiringRequest, 'create', [
-                'store_number' => $store->store_number,
-                'employees_needed' => $data['employees_needed'],
-                'candidates_count' => count($data['candidates'] ?? []),
-            ]);
 
             return $this->load($hiringRequest);
         });
@@ -87,10 +82,6 @@ class HiringRequestWorkflowService
                 ]);
             }
 
-            $this->createAuditLog($hiringRequest, 'decision', [
-                'number_hired' => $data['number_hired'],
-                'hiring_request_id' => $hiringRequest->id,
-            ]);
 
             return $decision->load('employees.employee');
         });
@@ -108,9 +99,4 @@ class HiringRequestWorkflowService
         ]);
     }
 
-    protected function createAuditLog(HiringRequest $hiringRequest, string $action, array $details): void
-    {
-        // Create an audit log entry linked to store or user context
-        // This would be recorded via User audit logs for cross-store visibility
-    }
 }

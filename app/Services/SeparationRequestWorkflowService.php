@@ -44,11 +44,6 @@ class SeparationRequestWorkflowService
 
             $this->storeAttachments($separationRequest, $data['attachments'] ?? []);
 
-            $this->createAuditLog($separationRequest, 'create', [
-                'store_number' => $store->store_number,
-                'employee_id' => $employee->id,
-                'separation_type' => $data['separation_type'],
-            ]);
 
             return $this->load($separationRequest);
         });
@@ -81,14 +76,6 @@ class SeparationRequestWorkflowService
                 ]);
             }
 
-            $this->createAuditLog(
-                $separationRequest,
-                'decision',
-                [
-                    'decision' => $data['decision'],
-                    'separation_id' => $separationRequest->id,
-                ]
-            );
 
             return $decision;
         });
@@ -133,15 +120,4 @@ class SeparationRequestWorkflowService
         }
     }
 
-    protected function createAuditLog(SeparationRequest $separationRequest, string $action, array $details): void
-    {
-        $separationRequest->employee->auditLogs()->create([
-            'user_id' => Auth::id(),
-            'action' => 'separation_request',
-            'action_details' => array_merge($details, [
-                'workflow' => 'separation_request.' . $action,
-                'store_id' => $separationRequest->store_id,
-            ]),
-        ]);
-    }
 }
