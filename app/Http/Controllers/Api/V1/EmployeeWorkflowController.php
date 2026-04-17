@@ -12,6 +12,7 @@ use App\Models\Employee;
 use App\Services\EmployeeQueryService;
 use App\Services\EmployeeWorkflowService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Pagination\LengthAwarePaginator;
 
 class EmployeeWorkflowController extends Controller
 {
@@ -26,6 +27,12 @@ class EmployeeWorkflowController extends Controller
         $store = $this->workflowService->resolveStoreByNumber($storeNumber);
         $employees = $this->queryService->index($store, $request->validated());
 
+        if ($employees instanceof LengthAwarePaginator) {
+            $employees->setCollection(
+                $employees->getCollection()->map(fn(Employee $employee) => $this->exposeSensitiveAttributes($employee))
+            );
+        }
+
         return response()->json($employees);
     }
 
@@ -33,6 +40,7 @@ class EmployeeWorkflowController extends Controller
     {
         $store = $this->workflowService->resolveStoreByNumber($storeNumber);
         $employee = $this->workflowService->loadForStore($store, $employee);
+        $employee = $this->exposeSensitiveAttributes($employee);
 
         return response()->json(['data' => $employee]);
     }
@@ -41,6 +49,7 @@ class EmployeeWorkflowController extends Controller
     {
         $store = $this->workflowService->resolveStoreByNumber($storeNumber);
         $employee = $this->workflowService->create($store, $request->validated(), $request);
+        $employee = $this->exposeSensitiveAttributes($employee);
 
         return response()->json(['data' => $employee], 201);
     }
@@ -49,6 +58,7 @@ class EmployeeWorkflowController extends Controller
     {
         $store = $this->workflowService->resolveStoreByNumber($storeNumber);
         $employee = $this->workflowService->update($store, $employee, $request->validated(), $request);
+        $employee = $this->exposeSensitiveAttributes($employee);
 
         return response()->json(['data' => $employee]);
     }
@@ -57,8 +67,20 @@ class EmployeeWorkflowController extends Controller
     {
         $store = $this->workflowService->resolveStoreByNumber($storeNumber);
         $employee = $this->workflowService->changeStatus($store, $employee, $request->validated());
+        $employee = $this->exposeSensitiveAttributes($employee);
 
         return response()->json(['data' => $employee]);
+    }
+
+    private function exposeSensitiveAttributes(Employee $employee): Employee
+    {
+        $employee->makeVisible(['ssn']);
+
+        if ($employee->relationLoaded('financialInfos')) {
+            $employee->financialInfos->makeVisible(['account_number', 'routing_number']);
+        }
+
+        return $employee;
     }
 
 }
