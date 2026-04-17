@@ -66,8 +66,6 @@ class SeparationRequestWorkflowService
                     ? EmployeeStatus::Terminated
                     : EmployeeStatus::Resigned;
 
-                $separationRequest->employee->update(['status' => $newStatus]);
-
                 // Add status history entry
                 $separationRequest->employee->statusHistories()->create([
                     'status' => $newStatus,
