@@ -40,7 +40,7 @@ class EmployeeWorkflowController extends Controller
     public function store(EmployeeWorkflowStoreRequest $request, string $storeNumber): JsonResponse
     {
         $store = $this->workflowService->resolveStoreByNumber($storeNumber);
-        $employee = $this->workflowService->create($store, $request->validated());
+        $employee = $this->workflowService->create($store, $request->validated(), $request);
 
         return response()->json(['data' => $employee], 201);
     }
@@ -48,7 +48,7 @@ class EmployeeWorkflowController extends Controller
     public function update(EmployeeWorkflowUpdateRequest $request, string $storeNumber, Employee $employee): JsonResponse
     {
         $store = $this->workflowService->resolveStoreByNumber($storeNumber);
-        $employee = $this->workflowService->update($store, $employee, $request->validated());
+        $employee = $this->workflowService->update($store, $employee, $request->validated(), $request);
 
         return response()->json(['data' => $employee]);
     }

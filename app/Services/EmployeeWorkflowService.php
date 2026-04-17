@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Jobs\PublishOutboxEventJob;
 use App\Models\AuditLog;
 use App\Models\Employee;
 use App\Models\EmployeeAddress;
@@ -18,7 +19,11 @@ use App\Models\EmployeePosition;
 use App\Models\EmployeeStatusHistory;
 use App\Models\EmployeeStore;
 use App\Models\Store;
+use App\Services\HiringEvents\HiringEventFactory;
+use App\Services\HiringEvents\HiringOutboxService;
+use App\Services\HiringEvents\ModelChangeSet;
 use DateTimeInterface;
+use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Arr;
@@ -32,9 +37,9 @@ class EmployeeWorkflowService
         return Store::query()->where('store_number', $storeNumber)->firstOrFail();
     }
 
-    public function create(Store $store, array $data): Employee
+    public function create(Store $store, array $data, ?Request $request = null): Employee
     {
-        return DB::transaction(function () use ($store, $data) {
+        return DB::transaction(function () use ($store, $data, $request) {
             $employee = Employee::query()->create(Arr::only($data, [
                 'first_name',
                 'middle_name',
@@ -64,15 +69,24 @@ class EmployeeWorkflowService
                 'payload' => $this->normalizeAuditPayload($data),
             ]);
 
-            return $this->loadEmployee($employee);
+            $loadedEmployee = $this->loadEmployee($employee->fresh());
+
+            $this->recordEvent('hiring.v1.employee.created', [
+                'employee' => $this->snapshotEmployee($loadedEmployee),
+                'store_number' => $store->store_number,
+            ], $request);
+
+            return $loadedEmployee;
         });
     }
 
-    public function update(Store $store, Employee $employee, array $data): Employee
+    public function update(Store $store, Employee $employee, array $data, ?Request $request = null): Employee
     {
         $this->assertEmployeeInStore($store, $employee);
 
-        return DB::transaction(function () use ($store, $employee, $data) {
+        return DB::transaction(function () use ($store, $employee, $data, $request) {
+            $beforeSnapshot = $this->snapshotEmployee($this->loadEmployee($employee->fresh()));
+
             $employee->fill(Arr::only($data, [
                 'first_name',
                 'middle_name',
@@ -138,7 +152,24 @@ class EmployeeWorkflowService
                 'payload' => $this->normalizeAuditPayload($data),
             ]);
 
-            return $this->loadEmployee($employee->fresh());
+            $loadedEmployee = $this->loadEmployee($employee->fresh());
+            $afterSnapshot = $this->snapshotEmployee($loadedEmployee);
+
+            $changedFields = ModelChangeSet::fromArrays(
+                $beforeSnapshot,
+                $afterSnapshot,
+                $this->snapshotChangeKeys($beforeSnapshot, $afterSnapshot)
+            );
+
+            if ($changedFields !== []) {
+                $this->recordEvent('hiring.v1.employee.updated', [
+                    'employee_id' => $employee->id,
+                    'store_number' => $store->store_number,
+                    'changed_fields' => $changedFields,
+                ], $request);
+            }
+
+            return $loadedEmployee;
         });
     }
 
@@ -459,6 +490,27 @@ class EmployeeWorkflowService
             'action' => $action,
             'action_details' => $details,
         ]);
+    }
+
+    private function recordEvent(string $subject, array $data, ?Request $request = null): void
+    {
+        $factory = app(HiringEventFactory::class);
+        $outbox = app(HiringOutboxService::class);
+
+        $envelope = $factory->make($subject, $data, $request);
+        $row = $outbox->record($subject, $envelope);
+
+        PublishOutboxEventJob::dispatch($row->id)->afterCommit();
+    }
+
+    private function snapshotEmployee(Employee $employee): array
+    {
+        return $employee->toArray();
+    }
+
+    private function snapshotChangeKeys(array $before, array $after): array
+    {
+        return array_values(array_unique(array_merge(array_keys($before), array_keys($after))));
     }
 
     private function normalizeAuditPayload(mixed $value): mixed
