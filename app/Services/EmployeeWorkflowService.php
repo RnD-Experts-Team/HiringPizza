@@ -18,6 +18,8 @@ use App\Models\EmployeePosition;
 use App\Models\EmployeeStatusHistory;
 use App\Models\EmployeeStore;
 use App\Models\Store;
+use DateTimeInterface;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
@@ -55,10 +57,11 @@ class EmployeeWorkflowService
             $this->syncMarital($employee, $data['marital_history'] ?? []);
             $this->syncAttachments($employee, $data['attachments'] ?? []);
 
-            $data['actor_user_id'] = Auth::id();
-            $this->createAuditLog($employee, $data['actor_user_id'] ?? null, 'create', [
+            $actorUserId = Auth::id();
+            $this->createAuditLog($employee, $actorUserId, 'create', [
                 'store_number' => $store->store_number,
                 'workflow' => 'employee.create',
+                'payload' => $this->normalizeAuditPayload($data),
             ]);
 
             return $this->loadEmployee($employee);
@@ -127,10 +130,12 @@ class EmployeeWorkflowService
             if (array_key_exists('attachments', $data)) {
                 $this->syncAttachments($employee, $data['attachments'] ?? []);
             }
-            $data['actor_user_id'] = Auth::id();
-            $this->createAuditLog($employee, $data['actor_user_id'] ?? null, 'update', [
+
+            $actorUserId = Auth::id();
+            $this->createAuditLog($employee, $actorUserId, 'update', [
                 'store_number' => $store->store_number,
                 'workflow' => 'employee.update',
+                'payload' => $this->normalizeAuditPayload($data),
             ]);
 
             return $this->loadEmployee($employee->fresh());
@@ -149,11 +154,13 @@ class EmployeeWorkflowService
                 'store_id' => $store->id,
                 'notes' => $data['notes'] ?? null,
             ]);
-            $data['actor_user_id'] = Auth::id();
-            $this->createAuditLog($employee, $data['actor_user_id'] ?? null, 'status_change', [
+
+            $actorUserId = Auth::id();
+            $this->createAuditLog($employee, $actorUserId, 'status_change', [
                 'store_number' => $store->store_number,
                 'status' => $data['status'],
                 'effective_date' => $data['effective_date'] ?? null,
+                'payload' => $this->normalizeAuditPayload($data),
             ]);
 
             return $this->loadEmployee($employee->fresh());
@@ -434,5 +441,36 @@ class EmployeeWorkflowService
             'action' => $action,
             'action_details' => $details,
         ]);
+    }
+
+    private function normalizeAuditPayload(mixed $value): mixed
+    {
+        if (is_array($value)) {
+            $normalized = [];
+
+            foreach ($value as $key => $item) {
+                $normalized[$key] = $this->normalizeAuditPayload($item);
+            }
+
+            return $normalized;
+        }
+
+        if ($value instanceof UploadedFile) {
+            return [
+                'original_name' => $value->getClientOriginalName(),
+                'mime_type' => $value->getClientMimeType(),
+                'file_size' => $value->getSize(),
+            ];
+        }
+
+        if ($value instanceof DateTimeInterface) {
+            return $value->format(DATE_ATOM);
+        }
+
+        if (is_object($value)) {
+            return method_exists($value, '__toString') ? (string) $value : get_class($value);
+        }
+
+        return $value;
     }
 }
