@@ -4,11 +4,16 @@ namespace App\Services;
 
 use App\Enums\SeparationType;
 use App\Enums\EmployeeStatus;
+use App\Jobs\PublishOutboxEventJob;
 use App\Models\Employee;
 use App\Models\SeparationRequestAttachment;
 use App\Models\SeparationRequest;
 use App\Models\SeparationRequestDecision;
 use App\Models\Store;
+use App\Services\HiringEvents\HiringEventFactory;
+use App\Services\HiringEvents\HiringOutboxService;
+use App\Services\HiringEvents\ModelChangeSet;
+use Illuminate\Http\Request;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -49,9 +54,9 @@ class SeparationRequestWorkflowService
         });
     }
 
-    public function makeDecision(SeparationRequest $separationRequest, array $data): SeparationRequestDecision
+    public function makeDecision(SeparationRequest $separationRequest, array $data, ?Request $request = null): SeparationRequestDecision
     {
-        return DB::transaction(function () use ($separationRequest, $data) {
+        return DB::transaction(function () use ($separationRequest, $data, $request) {
             $decision = SeparationRequestDecision::query()->create([
                 'separation_request_id' => $separationRequest->id,
                 'user_id' => Auth::id(),
@@ -62,16 +67,38 @@ class SeparationRequestWorkflowService
 
             // If decision is completed, update employee status
             if ($data['decision'] === 'completed') {
+                $employee = Employee::query()->findOrFail($separationRequest->employee_id);
+                $beforeSnapshot = $this->snapshotEmployee($this->loadEmployee($employee->fresh()));
+
                 $newStatus = $separationRequest->separation_type === SeparationType::Termination
                     ? EmployeeStatus::Terminated
                     : EmployeeStatus::Resigned;
 
                 // Add status history entry
-                $separationRequest->employee->statusHistories()->create([
+                $employee->statusHistories()->create([
                     'status' => $newStatus,
                     'effective_date' => $separationRequest->final_working_day,
                     'store_id' => $separationRequest->store_id,
                 ]);
+
+                $loadedEmployee = $this->loadEmployee($employee->fresh());
+                $afterSnapshot = $this->snapshotEmployee($loadedEmployee);
+
+                $changedFields = ModelChangeSet::fromArrays(
+                    $beforeSnapshot,
+                    $afterSnapshot,
+                    $this->snapshotChangeKeys($beforeSnapshot, $afterSnapshot)
+                );
+
+                if ($changedFields !== []) {
+                    $storeNumber = $separationRequest->store()->value('store_number');
+
+                    $this->recordEvent('hiring.v1.employee.updated', [
+                        'employee_id' => $employee->id,
+                        'store_number' => $storeNumber,
+                        'changed_fields' => $changedFields,
+                    ], $request);
+                }
             }
 
 
@@ -116,6 +143,45 @@ class SeparationRequestWorkflowService
                 "Employee {$employee->id} is not assigned to store {$store->store_number}"
             );
         }
+    }
+
+    private function loadEmployee(Employee $employee): Employee
+    {
+        return $employee->load([
+            'statusHistories.store',
+            'payHistories',
+            'contacts',
+            'addresses',
+            'availabilityDays.times',
+            'financialInfos',
+            'ids.idType',
+            'obsession',
+            'positions.position',
+            'stores.store',
+            'maritals.maritalStatus',
+            'attachments.attachmentType',
+        ]);
+    }
+
+    private function snapshotEmployee(Employee $employee): array
+    {
+        return $employee->toArray();
+    }
+
+    private function snapshotChangeKeys(array $before, array $after): array
+    {
+        return array_values(array_unique(array_merge(array_keys($before), array_keys($after))));
+    }
+
+    private function recordEvent(string $subject, array $data, ?Request $request = null): void
+    {
+        $factory = app(HiringEventFactory::class);
+        $outbox = app(HiringOutboxService::class);
+
+        $envelope = $factory->make($subject, $data, $request);
+        $row = $outbox->record($subject, $envelope);
+
+        PublishOutboxEventJob::dispatch($row->id)->afterCommit();
     }
 
 }
