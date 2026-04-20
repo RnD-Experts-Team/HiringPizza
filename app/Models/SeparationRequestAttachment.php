@@ -11,6 +11,13 @@ class SeparationRequestAttachment extends Model
 
     protected $guarded = [];
 
+    protected $appends = ['attachment_url'];
+
+    protected function getAttachmentUrlAttribute(): ?string
+    {
+        return $this->file_path ? asset('storage/' . $this->file_path) : null;
+    }
+
     protected function casts(): array
     {
         return [

@@ -14,6 +14,13 @@ class EmployeeObsession extends Model
 
     protected $guarded = [];
 
+    protected $appends = ['image_url'];
+
+    protected function getImageUrlAttribute(): ?string
+    {
+        return $this->image_path ? asset('storage/' . $this->image_path) : null;
+    }
+
     protected function casts(): array
     {
         return [
