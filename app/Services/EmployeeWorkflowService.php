@@ -173,11 +173,13 @@ class EmployeeWorkflowService
         });
     }
 
-    public function changeStatus(Store $store, Employee $employee, array $data): Employee
+    public function changeStatus(Store $store, Employee $employee, array $data, ?Request $request = null): Employee
     {
         $this->assertEmployeeInStore($store, $employee);
 
-        return DB::transaction(function () use ($store, $employee, $data) {
+        return DB::transaction(function () use ($store, $employee, $data, $request) {
+            $beforeSnapshot = $this->snapshotEmployee($this->loadEmployee($employee->fresh()));
+
             EmployeeStatusHistory::query()->create([
                 'employee_id' => $employee->id,
                 'status' => $data['status'],
@@ -194,7 +196,24 @@ class EmployeeWorkflowService
                 'payload' => $this->normalizeAuditPayload($data),
             ]);
 
-            return $this->loadEmployee($employee->fresh());
+            $loadedEmployee = $this->loadEmployee($employee->fresh());
+            $afterSnapshot = $this->snapshotEmployee($loadedEmployee);
+
+            $changedFields = ModelChangeSet::fromArrays(
+                $beforeSnapshot,
+                $afterSnapshot,
+                $this->snapshotChangeKeys($beforeSnapshot, $afterSnapshot)
+            );
+
+            if ($changedFields !== []) {
+                $this->recordEvent('hiring.v1.employee.updated', [
+                    'employee_id' => $employee->id,
+                    'store_number' => $store->store_number,
+                    'changed_fields' => $changedFields,
+                ], $request);
+            }
+
+            return $loadedEmployee;
         });
     }
 
