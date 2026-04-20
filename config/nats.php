@@ -10,6 +10,10 @@ $hiringSubject = $devMode
     ? 'hiring.testing.v1.>'
     : 'hiring.v1. >';
 
+$notificationsSubject = $devMode
+    ? 'notifications.testing.v1.>'
+    : 'notifications.v1.>';
+
 return [
     'dev_mode' => $devMode,
     'host' => env('NATS_HOST', '127.0.0.1'),
@@ -27,6 +31,12 @@ return [
                 ? env('NATS_HIRING_STREAM', 'HIRING_TESTING_EVENTS')
                 : env('NATS_HIRING_STREAM', 'HIRING_EVENTS'),
             'subjects' => [$hiringSubject],
+        ],
+        [
+            'name' => $devMode
+                ? env('NATS_NOTIFICATIONS_STREAM', 'NOTIFICATIONS_TESTING_EVENTS')
+                : env('NATS_NOTIFICATIONS_STREAM', 'NOTIFICATIONS_EVENTS'),
+            'subjects' => [$notificationsSubject],
         ],
     ],
     /**
