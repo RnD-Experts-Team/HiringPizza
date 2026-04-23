@@ -549,10 +549,20 @@ class EmployeeCsvImportService
     {
         $key = trim($storeNumber);
         if (isset($cache[$key])) {
-            return $cache[$key];
+            $cached = $cache[$key];
+
+            if ((int) ($cached->id ?? 0) > 0 && Store::query()->whereKey($cached->id)->exists()) {
+                return $cached;
+            }
+
+            unset($cache[$key]);
         }
 
         $store = Store::query()->where('store_number', $key)->first();
+
+        if ($store && (int) ($store->id ?? 0) <= 0) {
+            $store = null;
+        }
 
         if (!$store && $allowCreate) {
             if ($persistCreate) {
@@ -569,7 +579,7 @@ class EmployeeCsvImportService
             }
         }
 
-        if (!$store) {
+        if (!$store || (int) ($store->id ?? 0) <= 0 || !Store::query()->whereKey($store->id)->exists()) {
             throw new RuntimeException("Store not found for store number '{$key}'.");
         }
 
