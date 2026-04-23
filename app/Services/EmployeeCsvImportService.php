@@ -51,6 +51,7 @@ class EmployeeCsvImportService
         $positionCache = [];
         $storeCache = [];
         $idTypeCache = [];
+        $fallbackSsn = 100000;
         $warnings = [];
         $failures = [];
         $summary = [
@@ -65,7 +66,7 @@ class EmployeeCsvImportService
             $summary['rows_total']++;
 
             try {
-                $payload = $this->buildPayload($row, $line, $opts, $storeCache, $positionCache, $idTypeCache, $warnings);
+                $payload = $this->buildPayload($row, $line, $opts, $storeCache, $positionCache, $idTypeCache, $warnings, $fallbackSsn);
                 $store = $payload['store'];
                 $employeeData = $payload['employee'];
 
@@ -182,7 +183,8 @@ class EmployeeCsvImportService
         array &$storeCache,
         array &$positionCache,
         array &$idTypeCache,
-        array &$warnings
+        array &$warnings,
+        int &$fallbackSsn
     ): array {
         $storeNumber = $this->required($row, 'Store number', $line);
         $persistCreates = !(bool) $opts['dry_run'];
@@ -231,7 +233,7 @@ class EmployeeCsvImportService
             'middle_name' => $this->clean($row['Middle_name'] ?? null),
             'last_name' => $this->required($row, 'Last_name', $line),
             'gender' => $this->normalizeGender($this->required($row, 'Gender', $line)),
-            'ssn' => $this->normalizeSsn($row['SSN_Number'] ?? null, $line, $warnings),
+            'ssn' => $this->normalizeSsn($row['SSN_Number'] ?? null, $line, $warnings, $fallbackSsn),
             'employment_type' => $this->normalizeEmploymentType($this->required($row, 'Employment type', $line)),
             'status_history' => [
                 [
@@ -750,15 +752,15 @@ class EmployeeCsvImportService
     /**
      * @param array<int, array<string, mixed>> $warnings
      */
-    private function normalizeSsn(?string $value, int $line, array &$warnings): string
+    private function normalizeSsn(?string $value, int $line, array &$warnings, int &$fallbackSsn): string
     {
         $digits = preg_replace('/\D+/', '', (string) $value);
-        if ($digits !== null && strlen($digits) >= 4) {
+        if ($digits !== null && $digits !== '') {
             return $digits;
         }
 
-        // Use deterministic fallback for missing/invalid SSN to keep imports flowing.
-        $fallback = str_pad((string) (($line % 1000000000) + 100000000), 9, '0', STR_PAD_LEFT);
+        $fallbackSsn++;
+        $fallback = (string) $fallbackSsn;
         $warnings[] = [
             'line' => $line,
             'warning' => 'Missing or invalid SSN. Fallback SSN generated.',
@@ -776,32 +778,15 @@ class EmployeeCsvImportService
         }
 
         try {
-            $clean = str_replace(['.', '-'], '/', $clean);
-            $clean = preg_replace('/\s+/', '', $clean) ?? $clean;
+            $normalized = trim(preg_replace('/\s+/', ' ', $clean) ?? $clean);
+            $normalized = str_replace(['.', ','], '/', $normalized);
 
-            $formats = [
-                'Y-m-d',
-                '!Y/m/d',
-                'n/j/Y',
-                'm/d/Y',
-                'd/m/Y',
-                'j/n/Y',
-                'Y/n/j',
-                'M j Y',
-                'M d Y',
-                'n j Y',
-                'm d Y',
-            ];
-
-            foreach ($formats as $format) {
-                $dt = Carbon::createFromFormat($format, $clean);
-
-                if ($dt !== false && $dt->format('Y-m-d') !== false) {
-                    return $dt->toDateString();
-                }
+            $timestamp = strtotime($normalized);
+            if ($timestamp !== false) {
+                return Carbon::createFromTimestamp($timestamp)->toDateString();
             }
 
-            return Carbon::parse($clean)->toDateString();
+            return Carbon::parse($normalized)->toDateString();
         } catch (Throwable $e) {
             if ($nullable) {
                 return null;
