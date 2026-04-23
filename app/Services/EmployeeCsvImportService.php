@@ -778,8 +778,37 @@ class EmployeeCsvImportService
         }
 
         try {
-            $normalized = trim(preg_replace('/\s+/', ' ', $clean) ?? $clean);
-            $normalized = str_replace(['.', ','], '/', $normalized);
+            $normalized = preg_replace('/[\x{00A0}\x{2007}\x{202F}]/u', ' ', $clean) ?? $clean;
+            $normalized = trim(preg_replace('/\s+/', ' ', $normalized) ?? $normalized);
+            $normalized = trim($normalized, " \t\n\r\0\x0B");
+
+            $formats = [
+                '!Y-m-d',
+                '!Y/m/d',
+                '!n/j/Y',
+                '!m/d/Y',
+                '!d/m/Y',
+                '!j/n/Y',
+                '!M/j/Y',
+                '!M d, Y',
+                '!M d Y',
+                '!F j, Y',
+                '!F j Y',
+                '!M/j/Y',
+                '!F/j/Y',
+                '!j-M-Y',
+                '!j F Y',
+                '!d M Y',
+            ];
+
+            foreach ($formats as $format) {
+                $date = Carbon::createFromFormat($format, $normalized);
+                if ($date !== false) {
+                    return $date->toDateString();
+                }
+            }
+
+            $normalized = str_replace([',', '.'], '', $normalized);
 
             $timestamp = strtotime($normalized);
             if ($timestamp !== false) {
