@@ -197,13 +197,6 @@ class EmployeeCsvImportService
         $position = $this->resolvePosition($row['Position'] ?? '', (bool) $opts['create_missing_positions'], $persistCreates, $positionCache);
 
         $availability = $this->normalizeAvailability($row['Availability_Days'] ?? '', $row['Shift'] ?? '');
-        if (($row['Availability_Days'] ?? '') !== '' && $availability === []) {
-            $warnings[] = [
-                'line' => $line,
-                'warning' => 'Could not map availability text. Availability was skipped.',
-                'value' => $row['Availability_Days'],
-            ];
-        }
 
         $idRows = [];
 
@@ -463,7 +456,7 @@ class EmployeeCsvImportService
      */
     private function normalizeAvailability(string $availabilityDaysRaw, string $shiftRaw): array
     {
-        $availabilityDays = strtolower(trim($availabilityDaysRaw));
+        $availabilityDays = strtolower(trim(preg_replace('/\s+/', ' ', $availabilityDaysRaw) ?? $availabilityDaysRaw));
         $shift = $this->normalizeShift($shiftRaw) ?? 'OP';
 
         if ($availabilityDays === '') {
@@ -474,24 +467,36 @@ class EmployeeCsvImportService
             return $this->availabilityForDays(self::DAYS, $shift);
         }
 
-        if (in_array($availabilityDays, ['open availability', 'op', 'open availability-saturday - high demand', 'open availability-sunday - high demand'], true)) {
+        if (
+            str_contains($availabilityDays, 'open availability') ||
+            $availabilityDays === 'op' ||
+            str_contains($availabilityDays, 'high demand')
+        ) {
             return $this->availabilityForDays(self::DAYS, $shift);
+        }
+
+        if (preg_match('/^(weekdays(\s*&\s*sunday|\s+and\s+sunday)?|weekdays\s*&\s*sunday)$/', $availabilityDays) === 1) {
+            return $this->availabilityForDays(['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday'], $shift);
         }
 
         if (str_contains($availabilityDays, 'weekends only')) {
             return $this->availabilityForDays(['saturday', 'sunday'], $shift);
         }
 
+        if (str_contains($availabilityDays, 'only working a sundays') || str_contains($availabilityDays, 'sunday only') || $availabilityDays === 'sun') {
+            return $this->availabilityForDays(['sunday'], $shift);
+        }
+
         if (str_contains($availabilityDays, 'cannot work weekends')) {
             return $this->availabilityForDays(['monday', 'tuesday', 'wednesday', 'thursday', 'friday'], $shift);
         }
 
-        if (in_array($availabilityDays, ['sat', 'saturday only'], true)) {
-            return $this->availabilityForDays(['saturday'], $shift);
+        if (preg_match('/\bone day off per week\b|\btwo days off\b|\bthree days off\b|\bfour days off\b|\b5 days off\b|\b6 days off\b/', $availabilityDays) === 1) {
+            return [];
         }
 
-        if (in_array($availabilityDays, ['sun', 'sunday only'], true)) {
-            return $this->availabilityForDays(['sunday'], $shift);
+        if (in_array($availabilityDays, ['sat', 'saturday only'], true)) {
+            return $this->availabilityForDays(['saturday'], $shift);
         }
 
         if (str_contains($availabilityDays, 'off')) {
@@ -501,6 +506,10 @@ class EmployeeCsvImportService
 
                 return $this->availabilityForDays($workDays, $shift);
             }
+        }
+
+        if (preg_match('/\bop\s+pm\b|\bpm\s+op\b|\bam\s+pm\b|\bpm\s+am\b/', $availabilityDays) === 1) {
+            return $this->availabilityForDays(self::DAYS, $shift);
         }
 
         return [];
@@ -701,9 +710,13 @@ class EmployeeCsvImportService
 
     private function normalizeShift(string $value): ?string
     {
-        $v = strtoupper(trim($value));
+        $v = strtoupper(trim(preg_replace('/\s+/', ' ', $value) ?? $value));
         if ($v === '') {
             return null;
+        }
+
+        if (preg_match('/\b(AM|PM|OP|CL)\b/', $v, $matches) === 1) {
+            return $matches[1] === 'CL' ? 'OP' : $matches[1];
         }
 
         return match ($v) {
@@ -763,22 +776,27 @@ class EmployeeCsvImportService
         }
 
         try {
+            $clean = str_replace(['.', '-'], '/', $clean);
+            $clean = preg_replace('/\s+/', '', $clean) ?? $clean;
+
             $formats = [
                 'Y-m-d',
+                '!Y/m/d',
                 'n/j/Y',
                 'm/d/Y',
                 'd/m/Y',
-                'M/j/Y',
-                'M/d/Y',
-                'n-j-Y',
-                'm-j-Y',
-                'd-m-Y',
+                'j/n/Y',
+                'Y/n/j',
+                'M j Y',
+                'M d Y',
+                'n j Y',
+                'm d Y',
             ];
 
             foreach ($formats as $format) {
                 $dt = Carbon::createFromFormat($format, $clean);
 
-                if ($dt !== false) {
+                if ($dt !== false && $dt->format('Y-m-d') !== false) {
                     return $dt->toDateString();
                 }
             }
