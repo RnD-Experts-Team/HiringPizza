@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Api\V1;
 
+use App\Models\Employee;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -19,7 +20,24 @@ class EmployeeWorkflowStoreRequest extends FormRequest
             'middle_name' => ['nullable', 'string', 'max:100'],
             'last_name' => ['required', 'string', 'max:100'],
             'gender' => ['required', Rule::in(['male', 'female'])],
-            'ssn' => ['required', 'string', 'max:20'],
+            'ssn' => [
+                'bail',
+                'required',
+                'string',
+                'max:20',
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    $existingEmployee = Employee::query()
+                        ->select(['id', 'ssn'])
+                        ->cursor()
+                        ->first(function (Employee $employee) use ($value): bool {
+                            return $employee->ssn === $value;
+                        });
+
+                    if ($existingEmployee !== null) {
+                        $fail("An emp with that ssn already exists. Existing employee id: {$existingEmployee->id}.");
+                    }
+                },
+            ],
             'employment_type' => ['required', Rule::in(['W2', '1099'])],
 
             'status_history' => ['sometimes', 'array', 'min:1'],
