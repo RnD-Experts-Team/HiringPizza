@@ -9,16 +9,19 @@ use App\Http\Requests\Api\V1\EmployeeStatusChangeRequest;
 use App\Http\Requests\Api\V1\EmployeeWorkflowStoreRequest;
 use App\Http\Requests\Api\V1\EmployeeWorkflowUpdateRequest;
 use App\Models\Employee;
+use App\Services\EmployeeExportService;
 use App\Services\EmployeeQueryService;
 use App\Services\EmployeeWorkflowService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class EmployeeWorkflowController extends Controller
 {
     public function __construct(
         private readonly EmployeeWorkflowService $workflowService,
-        private readonly EmployeeQueryService $queryService
+        private readonly EmployeeQueryService $queryService,
+        private readonly EmployeeExportService $exportService
     ) {
     }
 
@@ -70,6 +73,11 @@ class EmployeeWorkflowController extends Controller
         $employee = $this->exposeSensitiveAttributes($employee);
 
         return response()->json(['data' => $employee]);
+    }
+
+    public function export(): StreamedResponse
+    {
+        return $this->exportService->export();
     }
 
     private function exposeSensitiveAttributes(Employee $employee): Employee

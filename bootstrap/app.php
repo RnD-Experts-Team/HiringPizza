@@ -14,6 +14,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
             'auth.token.store' => AuthTokenStoreScopeMiddleware::class,
+            'auth.secret.key' => \App\Http\Middleware\CheckSecretKeyMiddleware::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

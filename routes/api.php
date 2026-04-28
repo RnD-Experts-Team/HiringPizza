@@ -7,6 +7,10 @@ use App\Http\Controllers\Api\V1\HiringRequestController;
 use App\Http\Controllers\Api\V1\WorkflowRequestController;
 use Illuminate\Support\Facades\Route;
 
+
+Route::get('employees/export/csv', [EmployeeWorkflowController::class, 'export'])
+    ->name('api.v1.stores.employees.export')->middleware('auth.secret.key');
+
 Route::prefix('v1')->middleware('auth.token.store')->group(function (): void {
     Route::get('reference-catalog', [ReferenceCatalogController::class, 'index'])
         ->name('api.v1.reference-catalog.index');
@@ -31,6 +35,7 @@ Route::prefix('v1')->middleware('auth.token.store')->group(function (): void {
 
             Route::patch('employees/{employee}/status', [EmployeeWorkflowController::class, 'changeStatus'])
                 ->name('api.v1.stores.employees.change-status');
+
 
             // Separation Request Workflow
             Route::get('requests', [WorkflowRequestController::class, 'index'])
