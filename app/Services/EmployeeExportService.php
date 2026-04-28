@@ -126,6 +126,7 @@ class EmployeeExportService
         $hiredStatuses = [
             EmployeeStatus::Hired,
             EmployeeStatus::Rehired,
+            EmployeeStatus::OJE,
         ];
 
         $hiredHistory = $employee->statusHistories
