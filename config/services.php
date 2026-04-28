@@ -48,5 +48,5 @@ return [
         // Redis caching on client side
         'cache_ttl' => (int) env('AUTH_SERVER_CACHE_TTL', 30),
     ],
-
+    'x_secret_key' => env('X_SECRET_KEY'),
 ];

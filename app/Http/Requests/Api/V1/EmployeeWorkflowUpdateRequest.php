@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Api\V1;
 
+use App\Models\Employee;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -14,12 +15,35 @@ class EmployeeWorkflowUpdateRequest extends FormRequest
 
     public function rules(): array
     {
+        $currentEmployeeId = $this->resolveCurrentEmployeeId();
+
         return [
             'first_name' => ['sometimes', 'string', 'max:100'],
             'middle_name' => ['nullable', 'string', 'max:100'],
             'last_name' => ['sometimes', 'string', 'max:100'],
             'gender' => ['sometimes', Rule::in(['male', 'female'])],
-            'ssn' => ['sometimes', 'string', 'max:20'],
+            'ssn' => [
+                'bail',
+                'sometimes',
+                'string',
+                'max:20',
+                function (string $attribute, mixed $value, \Closure $fail) use ($currentEmployeeId): void {
+                    $existingEmployee = Employee::query()
+                        ->select(['id', 'ssn'])
+                        ->when(
+                            $currentEmployeeId !== null,
+                            fn($query) => $query->where('id', '!=', $currentEmployeeId)
+                        )
+                        ->cursor()
+                        ->first(function (Employee $employee) use ($value): bool {
+                            return $employee->ssn === $value;
+                        });
+
+                    if ($existingEmployee !== null) {
+                        $fail("An emp with that ssn already exists. Existing employee id: {$existingEmployee->id}.");
+                    }
+                },
+            ],
             'employment_type' => ['sometimes', Rule::in(['W2', '1099'])],
 
             'status_history' => ['sometimes', 'array'],
@@ -91,5 +115,22 @@ class EmployeeWorkflowUpdateRequest extends FormRequest
             'store_assignments.*.store_id' => ['required', 'integer', 'exists:stores,id'],
             'store_assignments.*.effective_date' => ['required', 'date'],
         ];
+    }
+
+    private function resolveCurrentEmployeeId(): ?int
+    {
+        foreach (['employee', 'employee_id', 'id'] as $routeParam) {
+            $value = $this->route($routeParam);
+
+            if (is_object($value) && isset($value->id) && is_numeric($value->id)) {
+                return (int) $value->id;
+            }
+
+            if (is_numeric($value)) {
+                return (int) $value;
+            }
+        }
+
+        return null;
     }
 }
