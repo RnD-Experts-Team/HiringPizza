@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Enums\EmployeeStatus;
 use App\Models\Employee;
 use App\Models\Store;
-use Illuminate\Support\Collection;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class EmployeeExportService
@@ -37,15 +36,13 @@ class EmployeeExportService
 
             $query->with([
                 'statusHistories' => fn($q) => $q->orderBy('effective_date', 'desc'),
-                'stores' => fn($q) => $q->orderBy('effective_date', 'desc'),
+                'stores.store',
                 'obsession',
             ]);
 
-            foreach ($query->chunk(500) as $employees) {
-                foreach ($employees as $employee) {
-                    fputcsv($handle, $this->buildRow($employee));
-                }
-            }
+            $query->orderBy('id')->get()->each(function (Employee $employee) use ($handle): void {
+                fputcsv($handle, $this->buildRow($employee));
+            });
 
             fclose($handle);
         }, 200, [
