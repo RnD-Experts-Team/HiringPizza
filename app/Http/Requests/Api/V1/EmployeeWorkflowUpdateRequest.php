@@ -78,7 +78,18 @@ class EmployeeWorkflowUpdateRequest extends FormRequest
             'availability.*.shift_type' => ['required', Rule::in(['PM', 'AM', 'OP'])],
             'availability.*.times' => ['sometimes', 'array', 'min:1'],
             'availability.*.times.*.available_from' => ['required', 'date_format:H:i'],
-            'availability.*.times.*.available_to' => ['required', 'date_format:H:i', 'after:availability.*.times.*.available_from'],
+            'availability.*.times.*.available_to' => [
+                'required',
+                'date_format:H:i',
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    $fromAttribute = str_replace('available_to', 'available_from', $attribute);
+                    $fromValue = $this->input($fromAttribute);
+
+                    if ($fromValue !== null && $value !== '00:00' && $value <= $fromValue) {
+                        $fail('The available to must be a time after available from.');
+                    }
+                },
+            ],
 
             'financial_info' => ['sometimes', 'array'],
             'financial_info.*.account_number' => ['required', 'string', 'max:255'],
