@@ -72,7 +72,7 @@ class EmployeeWorkflowStoreRequest extends FormRequest
             'availability.*.shift_type' => ['required', Rule::in(['PM', 'AM', 'OP'])],
             'availability.*.times' => ['sometimes', 'array', 'min:1'],
             'availability.*.times.*.available_from' => ['required', 'date_format:H:i'],
-            'availability.*.times.*.available_to' => ['required', 'date_format:H:i', 'after:availability.*.times.*.available_from'],
+            'availability.*.times.*.available_to' => ['required', 'date_format:H:i'],
 
             'financial_info' => ['sometimes', 'array'],
             'financial_info.*.account_number' => ['required', 'string', 'max:255'],
