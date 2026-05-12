@@ -16,7 +16,9 @@ class ImportEmployeesCsvCommand extends Command
         {--no-create-missing-id-types : Do not create missing id types}
         {--altametrics-id-type=Altametrics ID : Label used for Altametrics ID id_type}
         {--paychecks-id-type=Paychecks ID : Label used for Paychecks ID id_type}
-        {--clock-code-id-type=Altametrics Clock Code : Label used for Altametrics Clock code id_type}';
+        {--clock-code-id-type=Altametrics Clock Code : Label used for Altametrics Clock code id_type}
+        {--default-employment-type= : Fallback employment type when missing (W2|1099)}
+        {--default-gender= : Fallback gender when missing (male|female)}';
 
     protected $description = 'Import employee aggregate data from a CSV file with robust normalization and row-level error handling.';
 
@@ -45,6 +47,8 @@ class ImportEmployeesCsvCommand extends Command
             'altametrics_id_type' => (string) $this->option('altametrics-id-type'),
             'paychecks_id_type' => (string) $this->option('paychecks-id-type'),
             'clock_code_id_type' => (string) $this->option('clock-code-id-type'),
+            'default_employment_type' => $this->option('default-employment-type'),
+            'default_gender' => $this->option('default-gender'),
         ]);
 
         $summary = $result['summary'];
