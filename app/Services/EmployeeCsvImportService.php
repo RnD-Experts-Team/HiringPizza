@@ -28,6 +28,30 @@ class EmployeeCsvImportService
         'saturday',
     ];
 
+    private const HEADER_ALIASES = [
+        'store' => 'Store number',
+        'storenumber' => 'Store number',
+        'storeno' => 'Store number',
+        'store#' => 'Store number',
+        'name' => 'Name',
+        'fullname' => 'Name',
+        'ssn' => 'SSN_Number',
+        'ssnnumber' => 'SSN_Number',
+        'ssn_number' => 'SSN_Number',
+        'sex' => 'Gender',
+        'gender' => 'Gender',
+        'birthdate' => 'Birth_date',
+        'birth_date' => 'Birth_date',
+        'terminationdate' => 'Terminated date',
+        'terminateddate' => 'Terminated date',
+        'hireddate' => 'Hired Date',
+        'resigneddate' => 'Resigned Date',
+        'employmenttype' => 'Employment type',
+        'paychecksid' => 'Paychecks_ID',
+        'altametricsid' => 'Altametrics ID',
+        'altametricsclockcode' => 'Altametrics Clock code',
+    ];
+
     /**
      * @return array{summary: array<string, int>, failures: array<int, array<string, mixed>>, warnings: array<int, array<string, mixed>>}
      */
@@ -46,6 +70,8 @@ class EmployeeCsvImportService
             'altametrics_id_type' => 'Altametrics ID',
             'paychecks_id_type' => 'Paychecks ID',
             'clock_code_id_type' => 'Altametrics Clock Code',
+            'default_employment_type' => null,
+            'default_gender' => null,
         ], $options);
 
         $positionCache = [];
@@ -186,6 +212,7 @@ class EmployeeCsvImportService
         array &$warnings,
         int &$fallbackSsn
     ): array {
+        $row = $this->normalizeRow($row, $line, $opts, $warnings);
         $storeNumber = $this->required($row, 'Store number', $line);
         $persistCreates = !(bool) $opts['dry_run'];
         $store = $this->resolveStore($storeNumber, (bool) $opts['create_missing_stores'], $persistCreates, $storeCache);
@@ -228,13 +255,16 @@ class EmployeeCsvImportService
 
         $financial = $this->buildFinancialInfo($row, $effectiveStatusDate, $line, $warnings);
 
+        $birthDate = $this->normalizeDate($row['Birth_date'] ?? null, true);
+        $shirtSize = $this->normalizeShirtSize($row['Size'] ?? '');
+
         $data = [
             'first_name' => $this->required($row, 'First_name', $line),
             'middle_name' => $this->clean($row['Middle_name'] ?? null),
             'last_name' => $this->required($row, 'Last_name', $line),
-            'gender' => $this->normalizeGender($this->required($row, 'Gender', $line)),
+            'gender' => $this->resolveGender($row, $line, $opts, $warnings),
             'ssn' => $this->normalizeSsn($row['SSN_Number'] ?? null, $line, $warnings, $fallbackSsn),
-            'employment_type' => $this->normalizeEmploymentType($this->required($row, 'Employment type', $line)),
+            'employment_type' => $this->resolveEmploymentType($row, $line, $opts, $warnings),
             'status_history' => [
                 [
                     'status' => $status,
@@ -252,11 +282,19 @@ class EmployeeCsvImportService
             'addresses' => [$this->buildAddress($row)],
             'availability' => $availability,
             'pay_history' => $this->buildPayHistory($row, $effectiveStatusDate),
-            'obsession' => [
-                't_shirt' => $this->normalizeShirtSize($row['Size'] ?? ''),
-                'birth_date' => $this->normalizeDate($this->required($row, 'Birth_date', $line)),
-            ],
         ];
+
+        if ($birthDate !== null) {
+            $data['obsession'] = [
+                't_shirt' => $shirtSize,
+                'birth_date' => $birthDate,
+            ];
+        } elseif ($shirtSize !== null) {
+            $warnings[] = [
+                'line' => $line,
+                'warning' => 'Birth date missing. Obsession data was skipped.',
+            ];
+        }
 
         if ($position) {
             $data['positions'] = [
@@ -283,7 +321,7 @@ class EmployeeCsvImportService
                 'paychecks_id' => $paychecksId,
                 'ssn' => $data['ssn'],
                 'full_name' => strtolower(trim($data['first_name'] . ' ' . $data['last_name'])),
-                'birth_date' => $data['obsession']['birth_date'],
+                'birth_date' => $birthDate,
             ],
         ];
     }
@@ -787,6 +825,15 @@ class EmployeeCsvImportService
             return $nullable ? null : throw new RuntimeException('Missing required date value.');
         }
 
+        $excelDate = $this->parseExcelSerialDate($clean);
+        if ($excelDate !== null) {
+            return $excelDate;
+        }
+
+        if (is_numeric($clean)) {
+            return $nullable ? null : throw new RuntimeException("Unable to parse date '{$clean}'.");
+        }
+
         try {
             $normalized = trim(preg_replace('/\s+/', ' ', $clean) ?? $clean);
             $normalized = str_replace(['.', ','], '/', $normalized);
@@ -834,6 +881,175 @@ class EmployeeCsvImportService
     {
         $header = preg_replace('/^\xEF\xBB\xBF/', '', $header) ?? $header;
 
-        return trim($header);
+        $trimmed = trim($header);
+        if ($trimmed === '') {
+            return $trimmed;
+        }
+
+        $key = strtolower(preg_replace('/[^a-z0-9]+/', '', $trimmed) ?? $trimmed);
+
+        return self::HEADER_ALIASES[$key] ?? $trimmed;
+    }
+
+    /**
+     * @param array<string, string> $row
+     * @param array<int, array<string, mixed>> $warnings
+     * @return array<string, string>
+     */
+    private function normalizeRow(array $row, int $line, array $opts, array &$warnings): array
+    {
+        if (($row['First_name'] ?? '') === '' && ($row['Last_name'] ?? '') === '') {
+            $nameParts = $this->splitFullName($row['Name'] ?? null, $line, $warnings);
+
+            if ($nameParts['first_name'] !== null) {
+                $row['First_name'] = $nameParts['first_name'];
+            }
+
+            if ($nameParts['middle_name'] !== null) {
+                $row['Middle_name'] = $nameParts['middle_name'];
+            }
+
+            if ($nameParts['last_name'] !== null) {
+                $row['Last_name'] = $nameParts['last_name'];
+            }
+        }
+
+        if (($row['SSN_Number'] ?? '') === '' && isset($row['SSN'])) {
+            $row['SSN_Number'] = $row['SSN'];
+        }
+
+        if (($row['Employment type'] ?? '') === '') {
+            $fallback = $this->clean($opts['default_employment_type'] ?? null);
+            if ($fallback !== null) {
+                $row['Employment type'] = $fallback;
+                $warnings[] = [
+                    'line' => $line,
+                    'warning' => 'Employment type missing. Defaulted to ' . $fallback . '.',
+                ];
+            }
+        }
+
+        return $row;
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $warnings
+     * @return array{first_name: string|null, middle_name: string|null, last_name: string|null}
+     */
+    private function splitFullName(?string $name, int $line, array &$warnings): array
+    {
+        $clean = $this->clean($name);
+        if ($clean === null) {
+            $warnings[] = [
+                'line' => $line,
+                'warning' => 'Missing full name. Unable to split into first and last name.',
+            ];
+
+            return [
+                'first_name' => null,
+                'middle_name' => null,
+                'last_name' => null,
+            ];
+        }
+
+        $parts = preg_split('/\s+/', $clean, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        if (count($parts) === 1) {
+            $warnings[] = [
+                'line' => $line,
+                'warning' => 'Single-token name. Used the token for both first and last name.',
+                'value' => $clean,
+            ];
+
+            return [
+                'first_name' => $parts[0],
+                'middle_name' => null,
+                'last_name' => $parts[0],
+            ];
+        }
+
+        $suffixes = ['jr', 'sr', 'ii', 'iii', 'iv', 'v'];
+        $suffix = null;
+        $last = array_pop($parts);
+        if ($last !== null && in_array(strtolower($last), $suffixes, true)) {
+            $suffix = $last;
+            $last = array_pop($parts);
+        }
+
+        $first = array_shift($parts);
+        $middle = $parts !== [] ? implode(' ', $parts) : null;
+        $lastName = $last ?? '';
+
+        if ($suffix !== null && $lastName !== '') {
+            $lastName = trim($lastName . ' ' . $suffix);
+        }
+
+        return [
+            'first_name' => $first,
+            'middle_name' => $middle,
+            'last_name' => $lastName === '' ? null : $lastName,
+        ];
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $warnings
+     */
+    private function resolveGender(array $row, int $line, array $opts, array &$warnings): string
+    {
+        $raw = $this->clean($row['Gender'] ?? null);
+        $normalized = $raw === null ? null : strtolower($raw);
+
+        if ($normalized === null || in_array($normalized, ['not specified', 'unspecified', 'unknown', 'n/a', 'na'], true)) {
+            $fallback = $this->clean($opts['default_gender'] ?? null);
+            if ($fallback !== null) {
+                $warnings[] = [
+                    'line' => $line,
+                    'warning' => 'Gender missing or unspecified. Defaulted to ' . $fallback . '.',
+                    'value' => $raw,
+                ];
+
+                return $this->normalizeGender($fallback);
+            }
+
+            throw new RuntimeException("Missing gender on CSV line {$line}. Provide --default-gender to continue.");
+        }
+
+        return $this->normalizeGender($raw);
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $warnings
+     */
+    private function resolveEmploymentType(array $row, int $line, array $opts, array &$warnings): string
+    {
+        $raw = $this->clean($row['Employment type'] ?? null);
+        if ($raw === null) {
+            $fallback = $this->clean($opts['default_employment_type'] ?? null);
+            if ($fallback !== null) {
+                $warnings[] = [
+                    'line' => $line,
+                    'warning' => 'Employment type missing. Defaulted to ' . $fallback . '.',
+                ];
+
+                return $this->normalizeEmploymentType($fallback);
+            }
+
+            throw new RuntimeException("Missing employment type on CSV line {$line}. Provide --default-employment-type to continue.");
+        }
+
+        return $this->normalizeEmploymentType($raw);
+    }
+
+    private function parseExcelSerialDate(string $value): ?string
+    {
+        if (!is_numeric($value)) {
+            return null;
+        }
+
+        $numeric = (float) $value;
+        if ($numeric < 20000 || $numeric > 80000) {
+            return null;
+        }
+
+        return Carbon::create(1899, 12, 30)->addDays((int) round($numeric))->toDateString();
     }
 }
