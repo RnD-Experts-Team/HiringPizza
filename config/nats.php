@@ -8,7 +8,7 @@ $authSubject = $devMode
 
 $hiringSubject = $devMode
     ? 'hiring.testing.v1.>'
-    : 'hiring.v1. >';
+    : 'hiring.v1.>';
 
 $notificationsSubject = $devMode
     ? 'notifications.testing.v1.>'
