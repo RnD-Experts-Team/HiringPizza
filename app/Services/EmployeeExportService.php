@@ -4,8 +4,8 @@ namespace App\Services;
 
 use App\Enums\EmployeeStatus;
 use App\Models\Employee;
-use App\Models\EmployeeStatusHistory;
 use App\Models\Store;
+use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class EmployeeExportService
@@ -80,22 +80,23 @@ class EmployeeExportService
                 'End Date',
             ]);
 
-            $query = EmployeeStatusHistory::query()
+            $query = DB::table('employee_status_histories as esh')
                 ->select([
-                    'employee_status_histories.employee_id',
-                    'employee_status_histories.store_id',
-                    'employee_status_histories.status',
-                    'employee_status_histories.effective_date',
+                    'esh.id',
+                    'esh.employee_id',
+                    'esh.store_id',
+                    'esh.status',
+                    'esh.effective_date',
                     'employees.first_name',
                     'employees.middle_name',
                     'employees.last_name',
                     'stores.store_number',
                 ])
-                ->join('employees', 'employees.id', '=', 'employee_status_histories.employee_id')
-                ->leftJoin('stores', 'stores.id', '=', 'employee_status_histories.store_id')
-                ->orderBy('employee_status_histories.employee_id')
-                ->orderBy('employee_status_histories.effective_date')
-                ->orderBy('employee_status_histories.id');
+                ->leftJoin('employees', 'employees.id', '=', 'esh.employee_id')
+                ->leftJoin('stores', 'stores.id', '=', 'esh.store_id')
+                ->orderBy('esh.employee_id')
+                ->orderBy('esh.effective_date')
+                ->orderBy('esh.id');
 
             $currentEmployeeId = null;
             $currentEmployeeName = '';
@@ -116,10 +117,14 @@ class EmployeeExportService
                     $openStint = null;
                 }
 
-                $status = (string) $row->status;
-                $effectiveDate = (string) $row->effective_date;
+                $status = $this->canonicalStatus($row->status);
+                $effectiveDate = $this->formatDateString($row->effective_date);
                 $storeNumber = (string) ($row->store_number ?? '');
                 $storeId = $row->store_id;
+
+                if ($storeNumber === '' && $storeId !== null) {
+                    $storeNumber = (string) $storeId;
+                }
 
                 if ($this->isStartStatus($status)) {
                     if ($openStint !== null && $openStint['store_id'] !== $storeId) {
@@ -260,18 +265,22 @@ class EmployeeExportService
 
     private function isStartStatus(string $status): bool
     {
-        return in_array($status, [
-            EmployeeStatus::OJE->value,
-            EmployeeStatus::Hired->value,
-            EmployeeStatus::Rehired->value,
+        $normalized = $this->normalizeStatus($status);
+
+        return in_array($normalized, [
+            $this->normalizeStatus(EmployeeStatus::OJE->value),
+            $this->normalizeStatus(EmployeeStatus::Hired->value),
+            $this->normalizeStatus(EmployeeStatus::Rehired->value),
         ], true);
     }
 
     private function isEndStatus(string $status): bool
     {
-        return in_array($status, [
-            EmployeeStatus::Resigned->value,
-            EmployeeStatus::Terminated->value,
+        $normalized = $this->normalizeStatus($status);
+
+        return in_array($normalized, [
+            $this->normalizeStatus(EmployeeStatus::Resigned->value),
+            $this->normalizeStatus(EmployeeStatus::Terminated->value),
         ], true);
     }
 
@@ -288,6 +297,10 @@ class EmployeeExportService
 
     private function writeTenureRow($handle, string $employeeName, array $openStint, ?string $endStatus, ?string $endDate, ?string $fromDate, ?string $toDate): void
     {
+        if (($openStint['start_date'] ?? '') === '') {
+            return;
+        }
+
         if (!$this->isStartDateInRange($openStint['start_date'], $fromDate, $toDate)) {
             return;
         }
@@ -313,5 +326,36 @@ class EmployeeExportService
         }
 
         return true;
+    }
+
+    private function normalizeStatus(?string $status): string
+    {
+        return strtolower(trim((string) $status));
+    }
+
+    private function canonicalStatus(?string $status): string
+    {
+        return match ($this->normalizeStatus($status)) {
+            'oje' => EmployeeStatus::OJE->value,
+            'hired' => EmployeeStatus::Hired->value,
+            'rehired' => EmployeeStatus::Rehired->value,
+            'resigned' => EmployeeStatus::Resigned->value,
+            'terminated' => EmployeeStatus::Terminated->value,
+            default => (string) $status,
+        };
+    }
+
+    private function formatDateString($value): string
+    {
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('Y-m-d');
+        }
+
+        $stringValue = trim((string) $value);
+        if ($stringValue === '') {
+            return '';
+        }
+
+        return substr($stringValue, 0, 10);
     }
 }
