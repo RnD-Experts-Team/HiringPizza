@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\EmployeeDestroyRequest;
 use App\Http\Requests\Api\V1\EmployeeIndexRequest;
 use App\Http\Requests\Api\V1\EmployeeStatusChangeRequest;
+use App\Http\Requests\Api\V1\EmployeeTenureExportRequest;
 use App\Http\Requests\Api\V1\EmployeeWorkflowStoreRequest;
 use App\Http\Requests\Api\V1\EmployeeWorkflowUpdateRequest;
 use App\Models\Employee;
@@ -78,6 +79,13 @@ class EmployeeWorkflowController extends Controller
     public function export(): StreamedResponse
     {
         return $this->exportService->export();
+    }
+
+    public function exportTenure(EmployeeTenureExportRequest $request): StreamedResponse
+    {
+        $filters = $request->validated();
+
+        return $this->exportService->exportTenure($filters['from'] ?? null, $filters['to'] ?? null);
     }
 
     private function exposeSensitiveAttributes(Employee $employee): Employee
