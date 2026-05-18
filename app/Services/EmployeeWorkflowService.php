@@ -226,19 +226,20 @@ class EmployeeWorkflowService
 
     public function assertEmployeeInStore(Store $store, Employee $employee): void
     {
-        $inStore = EmployeeStore::query()
+        $latestStoreId = EmployeeStore::query()
             ->where('employee_id', $employee->id)
-            ->where('store_id', $store->id)
-            ->exists();
+            ->orderByDesc('effective_date')
+            ->orderByDesc('id')
+            ->value('store_id');
 
-        if (!$inStore) {
+        if ($latestStoreId === null || (int) $latestStoreId !== $store->id) {
             throw (new ModelNotFoundException())->setModel(Employee::class, [$employee->id]);
         }
     }
 
     private function loadEmployee(Employee $employee): Employee
     {
-        return $employee->load([
+        $employee->load([
             'statusHistories.store',
             'payHistories',
             'contacts',
@@ -252,6 +253,59 @@ class EmployeeWorkflowService
             'maritals.maritalStatus',
             'attachments.attachmentType',
         ]);
+
+        return $this->applyLatestEffectiveRelations($employee);
+    }
+
+    private function applyLatestEffectiveRelations(Employee $employee): Employee
+    {
+        if ($employee->relationLoaded('statusHistories')) {
+            $employee->setRelation('statusHistories', $this->latestEffectiveCollection($employee->statusHistories));
+        }
+
+        if ($employee->relationLoaded('payHistories')) {
+            $employee->setRelation('payHistories', $this->latestEffectiveCollection($employee->payHistories));
+        }
+
+        if ($employee->relationLoaded('financialInfos')) {
+            $employee->setRelation('financialInfos', $this->latestEffectiveCollection($employee->financialInfos));
+        }
+
+        if ($employee->relationLoaded('positions')) {
+            $employee->setRelation('positions', $this->latestEffectiveCollection($employee->positions));
+        }
+
+        if ($employee->relationLoaded('stores')) {
+            $employee->setRelation('stores', $this->latestEffectiveCollection($employee->stores));
+        }
+
+        if ($employee->relationLoaded('maritals')) {
+            $employee->setRelation('maritals', $this->latestEffectiveCollection($employee->maritals));
+        }
+
+        return $employee;
+    }
+
+    private function latestEffectiveCollection($collection)
+    {
+        if ($collection->isEmpty()) {
+            return $collection;
+        }
+
+        return $collection->sort(function ($left, $right) {
+            $leftDate = $left->effective_date instanceof DateTimeInterface
+                ? $left->effective_date->getTimestamp()
+                : 0;
+            $rightDate = $right->effective_date instanceof DateTimeInterface
+                ? $right->effective_date->getTimestamp()
+                : 0;
+
+            if ($leftDate === $rightDate) {
+                return $right->id <=> $left->id;
+            }
+
+            return $rightDate <=> $leftDate;
+        })->take(1)->values();
     }
 
     private function syncStoreAssignments(Employee $employee, Store $currentStore, array $rows): void

@@ -134,11 +134,12 @@ class SeparationRequestWorkflowService
 
     protected function assertEmployeeInStore(Store $store, Employee $employee): void
     {
-        $hasStoreAssignment = $employee->stores()
-            ->where('store_id', $store->id)
-            ->exists();
+        $latestStoreId = $employee->stores()
+            ->orderByDesc('effective_date')
+            ->orderByDesc('id')
+            ->value('store_id');
 
-        if (!$hasStoreAssignment) {
+        if ($latestStoreId === null || (int) $latestStoreId !== $store->id) {
             throw new ModelNotFoundException(
                 "Employee {$employee->id} is not assigned to store {$store->store_number}"
             );

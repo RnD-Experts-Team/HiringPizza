@@ -35,7 +35,8 @@ class EmployeeExportService
             $query = Employee::query();
 
             $query->with([
-                'statusHistories' => fn($q) => $q->orderBy('effective_date', 'desc'),
+                'statusHistories' => fn($q) => $q->orderBy('effective_date', 'desc')->orderBy('id', 'desc'),
+                'stores' => fn($q) => $q->orderBy('effective_date', 'desc')->orderBy('id', 'desc'),
                 'stores.store',
                 'obsession',
             ]);
