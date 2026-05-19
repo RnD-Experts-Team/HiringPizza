@@ -15,6 +15,9 @@ Route::get('employees/export/csv', [EmployeeWorkflowController::class, 'export']
 Route::get('employees/tenure/export/csv', [EmployeeWorkflowController::class, 'exportTenure'])
     ->name('api.v1.employees.tenure.export')->middleware('auth.secret.key');
 
+Route::get('employees/separation-statuses/export/csv', [EmployeeWorkflowController::class, 'exportSeparationStatusHistory'])
+    ->name('api.v1.employees.separation-statuses.export')->middleware('auth.secret.key');
+
 Route::prefix('v1')->middleware('auth.token.store')->group(function (): void {
     Route::post('employee-metrics/import', [EmployeeMetricController::class, 'import'])
         ->name('api.v1.employee-metrics.import');
