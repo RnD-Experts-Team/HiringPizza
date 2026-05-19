@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\V1\EmployeeWorkflowController;
+use App\Http\Controllers\Api\V1\EmployeeMetricController;
 use App\Http\Controllers\Api\V1\ReferenceCatalogController;
 use App\Http\Controllers\Api\V1\SeparationRequestController;
 use App\Http\Controllers\Api\V1\HiringRequestController;
@@ -15,6 +16,12 @@ Route::get('employees/tenure/export/csv', [EmployeeWorkflowController::class, 'e
     ->name('api.v1.employees.tenure.export')->middleware('auth.secret.key');
 
 Route::prefix('v1')->middleware('auth.token.store')->group(function (): void {
+    Route::post('employee-metrics/import', [EmployeeMetricController::class, 'import'])
+        ->name('api.v1.employee-metrics.import');
+
+    Route::get('employee-metrics', [EmployeeMetricController::class, 'index'])
+        ->name('api.v1.employee-metrics.index');
+
     Route::get('reference-catalog', [ReferenceCatalogController::class, 'index'])
         ->name('api.v1.reference-catalog.index');
 

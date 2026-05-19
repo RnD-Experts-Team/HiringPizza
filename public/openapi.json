@@ -15,7 +15,8 @@
         { "name": "Workflow Requests" },
         { "name": "Separation Request Workflow" },
         { "name": "Hiring Request Workflow" },
-        { "name": "Reference Catalog" }
+        { "name": "Reference Catalog" },
+        { "name": "Employee Metrics" }
     ],
     "paths": {
         "/v1/reference-catalog": {
@@ -128,6 +129,145 @@
                     },
                     "422": {
                         "description": "Validation error"
+                    }
+                }
+            }
+        },
+        "/v1/employee-metrics/import": {
+            "post": {
+                "tags": ["Employee Metrics"],
+                "summary": "Import employee metrics CSV",
+                "description": "Imports CSV metrics, matches employees by ID type, upserts per employee/date, and returns unmatched IDs.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/EmployeeMetricImportRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Import results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/EmployeeMetricImportResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": { "description": "Validation error" }
+                }
+            }
+        },
+        "/v1/employee-metrics": {
+            "get": {
+                "tags": ["Employee Metrics"],
+                "summary": "List employee metrics",
+                "description": "Global listing with filtering by employee, store, date, and column values.",
+                "parameters": [
+                    {
+                        "name": "employee_id",
+                        "in": "query",
+                        "schema": { "type": "integer" }
+                    },
+                    {
+                        "name": "emp_id_value",
+                        "in": "query",
+                        "schema": { "type": "string" }
+                    },
+                    {
+                        "name": "id_type_id",
+                        "in": "query",
+                        "schema": { "type": "integer" }
+                    },
+                    {
+                        "name": "store_number",
+                        "in": "query",
+                        "schema": { "type": "string" }
+                    },
+                    {
+                        "name": "date_from",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "date_to",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "column_key",
+                        "in": "query",
+                        "schema": { "type": "string" }
+                    },
+                    {
+                        "name": "column_label",
+                        "in": "query",
+                        "schema": { "type": "string" }
+                    },
+                    {
+                        "name": "value",
+                        "in": "query",
+                        "schema": { "type": "string" }
+                    },
+                    {
+                        "name": "value_min",
+                        "in": "query",
+                        "schema": { "type": "number" }
+                    },
+                    {
+                        "name": "value_max",
+                        "in": "query",
+                        "schema": { "type": "number" }
+                    },
+                    {
+                        "name": "sort_by",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "metric_date",
+                                "created_at",
+                                "updated_at",
+                                "employee_id",
+                                "store_number"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "sort_dir",
+                        "in": "query",
+                        "schema": { "type": "string", "enum": ["asc", "desc"] }
+                    },
+                    {
+                        "name": "per_page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 200
+                        }
+                    },
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "schema": { "type": "integer", "minimum": 1 }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Paginated metrics",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/EmployeeMetricIndexResponse"
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1610,6 +1750,112 @@
                         "type": "array",
                         "items": {
                             "$ref": "#/components/schemas/EmployeeWorkflowEntity"
+                        }
+                    },
+                    "first_page_url": { "type": "string" },
+                    "from": { "type": ["integer", "null"] },
+                    "last_page": { "type": "integer" },
+                    "last_page_url": { "type": "string" },
+                    "links": { "type": "array", "items": { "type": "object" } },
+                    "next_page_url": { "type": ["string", "null"] },
+                    "path": { "type": "string" },
+                    "per_page": { "type": "integer" },
+                    "prev_page_url": { "type": ["string", "null"] },
+                    "to": { "type": ["integer", "null"] },
+                    "total": { "type": "integer" }
+                }
+            },
+            "EmployeeMetricImportRequest": {
+                "type": "object",
+                "required": ["file"],
+                "properties": {
+                    "file": { "type": "string", "format": "binary" },
+                    "id_type_id": {
+                        "type": "integer",
+                        "description": "ID type used to match the CSV ID column. Defaults to 1 when omitted."
+                    }
+                }
+            },
+            "EmployeeMetricImportSummary": {
+                "type": "object",
+                "properties": {
+                    "rows_total": { "type": "integer" },
+                    "created": { "type": "integer" },
+                    "updated": { "type": "integer" },
+                    "unmatched": { "type": "integer" },
+                    "failed": { "type": "integer" }
+                }
+            },
+            "EmployeeMetricUnmatchedRow": {
+                "type": "object",
+                "properties": {
+                    "line": { "type": "integer" },
+                    "id_value": { "type": "string" },
+                    "store_number": { "type": ["string", "null"] },
+                    "date_raw": { "type": ["string", "null"] }
+                }
+            },
+            "EmployeeMetricFailureRow": {
+                "type": "object",
+                "properties": {
+                    "line": { "type": "integer" },
+                    "error": { "type": "string" },
+                    "id_value": { "type": ["string", "null"] }
+                }
+            },
+            "EmployeeMetricImportResponse": {
+                "type": "object",
+                "properties": {
+                    "summary": {
+                        "$ref": "#/components/schemas/EmployeeMetricImportSummary"
+                    },
+                    "unmatched": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/EmployeeMetricUnmatchedRow"
+                        }
+                    },
+                    "failures": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/EmployeeMetricFailureRow"
+                        }
+                    }
+                }
+            },
+            "EmployeeMetricValue": {
+                "type": "object",
+                "properties": {
+                    "label": { "type": "string" },
+                    "value": { "type": "string" },
+                    "value_numeric": { "type": ["string", "null"] }
+                }
+            },
+            "EmployeeMetricEntity": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "integer" },
+                    "employee_id": { "type": "integer" },
+                    "metric_date": { "type": "string", "format": "date" },
+                    "store_number": { "type": ["string", "null"] },
+                    "created_at": { "type": "string", "format": "date-time" },
+                    "updated_at": { "type": "string", "format": "date-time" },
+                    "values": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "$ref": "#/components/schemas/EmployeeMetricValue"
+                        }
+                    }
+                }
+            },
+            "EmployeeMetricIndexResponse": {
+                "type": "object",
+                "properties": {
+                    "current_page": { "type": "integer" },
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/EmployeeMetricEntity"
                         }
                     },
                     "first_page_url": { "type": "string" },
