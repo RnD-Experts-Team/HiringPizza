@@ -13,6 +13,7 @@ use App\Services\EmployeeExportService;
 use App\Services\EmployeeQueryService;
 use App\Services\EmployeeWorkflowService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -74,12 +75,19 @@ class EmployeeWorkflowController extends Controller
 
         return response()->json(['data' => $employee]);
     }
-
-    public function export(): StreamedResponse
+    public function export(Request $request): StreamedResponse
     {
-        return $this->exportService->export();
-    }
+        $store = null;
 
+        if ($request->filled('store_number')) {
+            $store = $this->workflowService->resolveStoreByNumber(
+                $request->query('store_number')
+            );
+        }
+
+        return $this->exportService->export($store);
+    }
+    
     private function exposeSensitiveAttributes(Employee $employee): Employee
     {
         $employee->makeVisible(['ssn']);
