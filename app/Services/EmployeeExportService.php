@@ -185,7 +185,6 @@ class EmployeeExportService
 
             $query = DB::table('employee_status_histories as esh')
                 ->select([
-                    'esh.id',
                     'esh.employee_id',
                     'esh.store_id',
                     'esh.status',
@@ -202,17 +201,31 @@ class EmployeeExportService
                     EmployeeStatus::Terminated->value,
                 ])
                 ->whereDate('esh.effective_date', '>=', $fromDate)
-                ->whereRaw(
-                    "COALESCE((select prev.status from employee_status_histories as prev where prev.employee_id = esh.employee_id and prev.effective_date < esh.effective_date order by prev.effective_date desc limit 1), '') not in (?, ?, ?)",
-                    [
-                        EmployeeStatus::Hired->value,
-                        EmployeeStatus::Rehired->value,
-                        EmployeeStatus::OJE->value,
-                    ]
-                )
+                // Only include terminated/resigned if previous status is terminated/resigned or null
+                ->whereRaw("
+                (
+                    select prev.status
+                    from employee_status_histories as prev
+                    where prev.employee_id = esh.employee_id
+                      and prev.effective_date < esh.effective_date
+                    order by prev.effective_date desc
+                    limit 1
+                ) is null
+                or
+                (
+                    select prev.status
+                    from employee_status_histories as prev
+                    where prev.employee_id = esh.employee_id
+                      and prev.effective_date < esh.effective_date
+                    order by prev.effective_date desc
+                    limit 1
+                ) in (?, ?)
+            ", [
+                    EmployeeStatus::Resigned->value,
+                    EmployeeStatus::Terminated->value,
+                ])
                 ->orderBy('esh.employee_id')
-                ->orderBy('esh.effective_date')
-                ->orderBy('esh.id');
+                ->orderByDesc('esh.effective_date');
 
             foreach ($query->cursor() as $row) {
                 $storeNumber = (string) ($row->store_number ?? '');
