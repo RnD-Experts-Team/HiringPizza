@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\EmployeeDestroyRequest;
 use App\Http\Requests\Api\V1\EmployeeIndexRequest;
+use App\Http\Requests\Api\V1\EmployeeSeparationStatusExportRequest;
 use App\Http\Requests\Api\V1\EmployeeStatusChangeRequest;
 use App\Http\Requests\Api\V1\EmployeeTenureExportRequest;
 use App\Http\Requests\Api\V1\EmployeeWorkflowStoreRequest;
@@ -86,6 +87,13 @@ class EmployeeWorkflowController extends Controller
         $filters = $request->validated();
 
         return $this->exportService->exportTenure($filters['from'] ?? null, $filters['to'] ?? null);
+    }
+
+    public function exportSeparationStatusHistory(EmployeeSeparationStatusExportRequest $request): StreamedResponse
+    {
+        $filters = $request->validated();
+
+        return $this->exportService->exportSeparationStatusHistory($filters['effective_from'] ?? null);
     }
 
     private function exposeSensitiveAttributes(Employee $employee): Employee

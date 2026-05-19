@@ -10,6 +10,8 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class EmployeeExportService
 {
+    private const DEFAULT_SEPARATION_EFFECTIVE_FROM = '2026-01-01';
+
     /**
      * Export employees to CSV format
      *
@@ -152,6 +154,75 @@ class EmployeeExportService
 
             if ($openStint !== null) {
                 $this->writeTenureRow($handle, $currentEmployeeName, $openStint, null, null, $fromDate, $toDate);
+            }
+
+            fclose($handle);
+        }, 200, [
+            'Content-Type' => 'text/csv; charset=utf-8',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+        ]);
+
+        return $response;
+    }
+
+    /**
+     * Export status history for employees terminated/resigned on or after a date.
+     */
+    public function exportSeparationStatusHistory(?string $effectiveFrom = null): StreamedResponse
+    {
+        $filename = 'employee_separation_status_history_' . date('Y-m-d_His') . '.csv';
+        $fromDate = $effectiveFrom ? date('Y-m-d', strtotime($effectiveFrom)) : self::DEFAULT_SEPARATION_EFFECTIVE_FROM;
+
+        $response = new StreamedResponse(function () use ($fromDate) {
+            $handle = fopen('php://output', 'w');
+
+            fputcsv($handle, [
+                'Store #',
+                'Emp',
+                'Status',
+                'Effective Date',
+            ]);
+
+            $employeeIds = DB::table('employee_status_histories as filter')
+                ->select('filter.employee_id')
+                ->whereIn('filter.status', [
+                    EmployeeStatus::Resigned->value,
+                    EmployeeStatus::Terminated->value,
+                ])
+                ->whereDate('filter.effective_date', '>=', $fromDate);
+
+            $query = DB::table('employee_status_histories as esh')
+                ->select([
+                    'esh.id',
+                    'esh.employee_id',
+                    'esh.store_id',
+                    'esh.status',
+                    'esh.effective_date',
+                    'employees.first_name',
+                    'employees.middle_name',
+                    'employees.last_name',
+                    'stores.store_number',
+                ])
+                ->leftJoin('employees', 'employees.id', '=', 'esh.employee_id')
+                ->leftJoin('stores', 'stores.id', '=', 'esh.store_id')
+                ->whereIn('esh.employee_id', $employeeIds)
+                ->orderBy('esh.employee_id')
+                ->orderBy('esh.effective_date')
+                ->orderBy('esh.id');
+
+            foreach ($query->cursor() as $row) {
+                $storeNumber = (string) ($row->store_number ?? '');
+
+                if ($storeNumber === '' && $row->store_id !== null) {
+                    $storeNumber = (string) $row->store_id;
+                }
+
+                fputcsv($handle, [
+                    $storeNumber,
+                    $this->formatNameFromRow($row->first_name, $row->middle_name, $row->last_name),
+                    $this->canonicalStatus($row->status),
+                    $this->formatDateString($row->effective_date),
+                ]);
             }
 
             fclose($handle);
