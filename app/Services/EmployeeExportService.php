@@ -189,7 +189,15 @@ class EmployeeExportService
                     EmployeeStatus::Resigned->value,
                     EmployeeStatus::Terminated->value,
                 ])
-                ->whereDate('filter.effective_date', '>=', $fromDate);
+                ->whereDate('filter.effective_date', '>=', $fromDate)
+                ->whereRaw(
+                    "COALESCE((select prev.status from employee_status_histories as prev where prev.employee_id = filter.employee_id and (prev.effective_date < filter.effective_date or (prev.effective_date = filter.effective_date and prev.id < filter.id)) order by prev.effective_date desc, prev.id desc limit 1), '') not in (?, ?, ?)",
+                    [
+                        EmployeeStatus::Hired->value,
+                        EmployeeStatus::Rehired->value,
+                        EmployeeStatus::OJE->value,
+                    ]
+                );
 
             $query = DB::table('employee_status_histories as esh')
                 ->select([
