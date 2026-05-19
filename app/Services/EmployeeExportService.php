@@ -183,22 +183,6 @@ class EmployeeExportService
                 'Effective Date',
             ]);
 
-            $employeeIds = DB::table('employee_status_histories as filter')
-                ->select('filter.employee_id')
-                ->whereIn('filter.status', [
-                    EmployeeStatus::Resigned->value,
-                    EmployeeStatus::Terminated->value,
-                ])
-                ->whereDate('filter.effective_date', '>=', $fromDate)
-                ->whereRaw(
-                    "COALESCE((select prev.status from employee_status_histories as prev where prev.employee_id = filter.employee_id and (prev.effective_date < filter.effective_date or (prev.effective_date = filter.effective_date and prev.id < filter.id)) order by prev.effective_date desc, prev.id desc limit 1), '') not in (?, ?, ?)",
-                    [
-                        EmployeeStatus::Hired->value,
-                        EmployeeStatus::Rehired->value,
-                        EmployeeStatus::OJE->value,
-                    ]
-                );
-
             $query = DB::table('employee_status_histories as esh')
                 ->select([
                     'esh.id',
@@ -213,7 +197,19 @@ class EmployeeExportService
                 ])
                 ->leftJoin('employees', 'employees.id', '=', 'esh.employee_id')
                 ->leftJoin('stores', 'stores.id', '=', 'esh.store_id')
-                ->whereIn('esh.employee_id', $employeeIds)
+                ->whereIn('esh.status', [
+                    EmployeeStatus::Resigned->value,
+                    EmployeeStatus::Terminated->value,
+                ])
+                ->whereDate('esh.effective_date', '>=', $fromDate)
+                ->whereRaw(
+                    "COALESCE((select prev.status from employee_status_histories as prev where prev.employee_id = esh.employee_id and prev.effective_date < esh.effective_date order by prev.effective_date desc limit 1), '') not in (?, ?, ?)",
+                    [
+                        EmployeeStatus::Hired->value,
+                        EmployeeStatus::Rehired->value,
+                        EmployeeStatus::OJE->value,
+                    ]
+                )
                 ->orderBy('esh.employee_id')
                 ->orderBy('esh.effective_date')
                 ->orderBy('esh.id');
