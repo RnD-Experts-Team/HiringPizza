@@ -182,7 +182,7 @@ class SeparationRequestWorkflowService
         $envelope = $factory->make($subject, $data, $request);
         $row = $outbox->record($subject, $envelope);
 
-        PublishOutboxEventJob::dispatch($row->id)->afterCommit();
+        PublishOutboxEventJob::dispatch($row->id);
     }
 
 }
