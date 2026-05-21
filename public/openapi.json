@@ -16,7 +16,8 @@
         { "name": "Separation Request Workflow" },
         { "name": "Hiring Request Workflow" },
         { "name": "Reference Catalog" },
-        { "name": "Employee Metrics" }
+        { "name": "Employee Metrics" },
+        { "name": "Manager Dashboard" }
     ],
     "paths": {
         "/v1/reference-catalog": {
@@ -1033,6 +1034,81 @@
                         }
                     },
                     "422": { "description": "Validation error" },
+                    "404": { "description": "Store not found" }
+                }
+            }
+        },
+        "/v1/stores/{storeNumber}/manager-dashboard/{date}": {
+            "get": {
+                "tags": ["Manager Dashboard"],
+                "summary": "Manager dashboard snapshot for a store on a given date",
+                "description": "Returns all active employees assigned to the store with: upcoming birthday flags (within 7 days of `date`), current position, current base/performance pay, and their performance metric value for column id 3 within the week (Tuesday–Monday) that contains `date`.",
+                "parameters": [
+                    { "$ref": "#/components/parameters/storeNumber" },
+                    {
+                        "name": "date",
+                        "in": "path",
+                        "required": true,
+                        "description": "Reference date in YYYY-MM-DD format. Determines the 7-day birthday window and the Tuesday–Monday metric week.",
+                        "schema": { "type": "string", "format": "date", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Dashboard snapshot",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ManagerDashboardResponse"
+                                },
+                                "example": {
+                                    "store_id": "NY001",
+                                    "date": "2026-05-21",
+                                    "week_start": "2026-05-19",
+                                    "week_end": "2026-05-25",
+                                    "employees": [
+                                        {
+                                            "employee_id": 42,
+                                            "name": {
+                                                "first": "Jane",
+                                                "middle": null,
+                                                "last": "Doe"
+                                            },
+                                            "birthday": {
+                                                "is_upcoming": true,
+                                                "birth_date": "1995-05-24",
+                                                "days_until": 3,
+                                                "turns_age": 31
+                                            },
+                                            "position": "Shift Lead",
+                                            "base_pay": "16.50",
+                                            "performance_pay": "2.00",
+                                            "metric": {
+                                                "metric_date": "2026-05-20",
+                                                "value": "97.4",
+                                                "value_numeric": 97.4
+                                            }
+                                        },
+                                        {
+                                            "employee_id": 55,
+                                            "name": {
+                                                "first": "Carlos",
+                                                "middle": "A.",
+                                                "last": "Rivera"
+                                            },
+                                            "birthday": {
+                                                "is_upcoming": false
+                                            },
+                                            "position": "Cook",
+                                            "base_pay": "14.00",
+                                            "performance_pay": "1.50",
+                                            "metric": null
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
                     "404": { "description": "Store not found" }
                 }
             }
@@ -2339,6 +2415,76 @@
                 "properties": {
                     "data": {
                         "$ref": "#/components/schemas/HiringRequestDecisionEntity"
+                    }
+                }
+            },
+            "ManagerDashboardBirthday": {
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "description": "Birthday falls within the next 7 days of the reference date.",
+                        "required": ["is_upcoming", "birth_date", "days_until", "turns_age"],
+                        "properties": {
+                            "is_upcoming": { "type": "boolean", "enum": [true] },
+                            "birth_date": { "type": "string", "format": "date" },
+                            "days_until": { "type": "integer", "minimum": 0, "maximum": 6 },
+                            "turns_age": { "type": "integer", "minimum": 0 }
+                        }
+                    },
+                    {
+                        "type": "object",
+                        "description": "No birthday within the next 7 days.",
+                        "required": ["is_upcoming"],
+                        "properties": {
+                            "is_upcoming": { "type": "boolean", "enum": [false] }
+                        }
+                    }
+                ]
+            },
+            "ManagerDashboardMetric": {
+                "type": "object",
+                "description": "Performance metric value for column id 3 within the Tuesday–Monday week containing the reference date.",
+                "properties": {
+                    "metric_date": { "type": "string", "format": "date" },
+                    "value": { "type": ["string", "null"] },
+                    "value_numeric": { "type": ["number", "null"] }
+                }
+            },
+            "ManagerDashboardEmployee": {
+                "type": "object",
+                "properties": {
+                    "employee_id": { "type": "integer" },
+                    "name": {
+                        "type": "object",
+                        "properties": {
+                            "first": { "type": "string" },
+                            "middle": { "type": ["string", "null"] },
+                            "last": { "type": "string" }
+                        }
+                    },
+                    "birthday": { "$ref": "#/components/schemas/ManagerDashboardBirthday" },
+                    "position": { "type": ["string", "null"], "description": "Label of the employee's latest effective position." },
+                    "base_pay": { "type": ["string", "null"], "description": "Latest effective base pay formatted to 2 decimal places." },
+                    "performance_pay": { "type": ["string", "null"], "description": "Latest effective performance pay formatted to 2 decimal places." },
+                    "metric": {
+                        "oneOf": [
+                            { "$ref": "#/components/schemas/ManagerDashboardMetric" },
+                            { "type": "null" }
+                        ],
+                        "description": "Metric for column id 3 within the week. Null if none recorded."
+                    }
+                }
+            },
+            "ManagerDashboardResponse": {
+                "type": "object",
+                "properties": {
+                    "store_id": { "type": "string", "description": "Store number." },
+                    "date": { "type": "string", "format": "date", "description": "The reference date passed in the path." },
+                    "week_start": { "type": "string", "format": "date", "description": "Tuesday that starts the week containing `date`." },
+                    "week_end": { "type": "string", "format": "date", "description": "Monday that ends the week containing `date`." },
+                    "employees": {
+                        "type": "array",
+                        "items": { "$ref": "#/components/schemas/ManagerDashboardEmployee" }
                     }
                 }
             }
