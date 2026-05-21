@@ -56,13 +56,20 @@ class ManagerDashboardService
                 },
                 'metrics' => function ($q) use ($weekStart, $weekEnd) {
                     $q->whereBetween('metric_date', [
-                        $weekStart->toDateString(),
-                        $weekEnd->toDateString(),
-                    ])->with([
-                                'values' => function ($q) {
-                                    $q->where('column_id', 3);
-                                }
-                            ]);
+                            $weekStart->toDateString(),
+                            $weekEnd->toDateString(),
+                        ])
+                        ->join('employee_metric_values', function ($join) {
+                            $join->on('employee_metric_values.employee_metric_id', '=', 'employee_metrics.id')
+                                 ->where('employee_metric_values.column_id', 3);
+                        })
+                        ->select([
+                            'employee_metrics.id',
+                            'employee_metrics.employee_id',
+                            'employee_metrics.metric_date',
+                            'employee_metric_values.value',
+                            'employee_metric_values.value_numeric',
+                        ]);
                 },
             ])
             ->orderBy('last_name')
@@ -131,22 +138,16 @@ class ManagerDashboardService
 
     private function resolveMetric(Employee $employee): ?array
     {
-        // Pick the metric with the latest metric_date within the week that has a value for column_id=3
-        $metric = $employee->metrics
-            ->filter(fn($m) => $m->values->isNotEmpty())
-            ->sortByDesc('metric_date')
-            ->first();
+        $metric = $employee->metrics->sortByDesc('metric_date')->first();
 
         if ($metric === null) {
             return null;
         }
 
-        $value = $metric->values->first();
-
         return [
-            'metric_date' => $metric->metric_date,
-            'value' => $value->value,
-            'value_numeric' => $value->value_numeric !== null ? (float) $value->value_numeric : null,
+            'metric_date'   => $metric->metric_date,
+            'value'         => $metric->value,
+            'value_numeric' => $metric->value_numeric !== null ? (float) $metric->value_numeric : null,
         ];
     }
 }
