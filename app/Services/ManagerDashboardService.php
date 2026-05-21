@@ -5,16 +5,21 @@ namespace App\Services;
 use App\Models\Employee;
 use App\Models\Store;
 use Carbon\Carbon;
-
+use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
 class ManagerDashboardService
 {
+
+    private function isoBusinessWeek(CarbonImmutable $date): array
+    {
+        $start = $date->startOfWeek(CarbonInterface::TUESDAY);
+        return [$start, $start->addDays(6)];
+    }
     public function getDashboard(Store $store, string $date): array
     {
-        $parsedDate = Carbon::parse($date)->startOfDay();
+        $day = CarbonImmutable::parse($date)->startOfDay();
 
-        $daysFromTuesday = ($parsedDate->dayOfWeek - 2 + 7) % 7;
-        $weekStart = $parsedDate->copy()->subDays($daysFromTuesday);
-        $weekEnd = $weekStart->copy()->addDays(6);
+        [$weekStart, $weekEnd] = $this->isoBusinessWeek($day);
 
         $employees = Employee::query()
             ->whereHas('stores', function ($q) use ($store) {
@@ -66,14 +71,14 @@ class ManagerDashboardService
 
         return [
             'store_id' => $store->store_number,
-            'date' => $parsedDate->toDateString(),
+            'date' => $day->toDateString(),
             'week_start' => $weekStart->toDateString(),
             'week_end' => $weekEnd->toDateString(),
-            'employees' => $employees->map(fn(Employee $emp) => $this->mapEmployee($emp, $parsedDate))->values()->all(),
+            'employees' => $employees->map(fn(Employee $emp) => $this->mapEmployee($emp, $day))->values()->all(),
         ];
     }
 
-    private function mapEmployee(Employee $employee, Carbon $date): array
+    private function mapEmployee(Employee $employee, CarbonImmutable $date): array
     {
         $latestPosition = $employee->positions->first();
         $latestPay = $employee->payHistories->first();
@@ -94,7 +99,7 @@ class ManagerDashboardService
         ];
     }
 
-    private function resolveBirthday(Employee $employee, Carbon $date): array
+    private function resolveBirthday(Employee $employee, CarbonImmutable $date): array
     {
         $birthDate = $employee->obsession?->birth_date;
 
