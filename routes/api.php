@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\V1\EmployeeMetricController;
 use App\Http\Controllers\Api\V1\ReferenceCatalogController;
 use App\Http\Controllers\Api\V1\SeparationRequestController;
 use App\Http\Controllers\Api\V1\HiringRequestController;
+use App\Http\Controllers\Api\V1\ManagerDashboardController;
 use App\Http\Controllers\Api\V1\WorkflowRequestController;
 use Illuminate\Support\Facades\Route;
 
@@ -59,6 +60,11 @@ Route::prefix('v1')->middleware('auth.token.store')->group(function (): void {
 
             Route::post('separation-requests/{separationRequest}/decision', [SeparationRequestController::class, 'decide'])
                 ->name('api.v1.stores.separation-requests.decide');
+
+            // Manager Dashboard
+            Route::get('manager-dashboard/{date}', [ManagerDashboardController::class, 'show'])
+                ->where(['date' => '[0-9]{4}-[0-9]{2}-[0-9]{2}'])
+                ->name('api.v1.stores.manager-dashboard.show');
 
             // Hiring Request Workflow
             Route::post('hiring-requests', [HiringRequestController::class, 'store'])
