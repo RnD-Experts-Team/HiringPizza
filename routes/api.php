@@ -44,7 +44,7 @@ Route::prefix('v1')->middleware('auth.token.store')->group(function (): void {
             Route::get('employees/{employee}', [EmployeeWorkflowController::class, 'show'])
                 ->name('api.v1.stores.employees.show');
 
-            Route::put('employees/{employee}', [EmployeeWorkflowController::class, 'update'])
+            Route::post('employees/{employee}', [EmployeeWorkflowController::class, 'update'])
                 ->name('api.v1.stores.employees.update');
 
             Route::patch('employees/{employee}/status', [EmployeeWorkflowController::class, 'changeStatus'])
