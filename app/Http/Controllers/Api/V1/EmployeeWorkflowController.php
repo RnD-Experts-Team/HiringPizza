@@ -14,16 +14,19 @@ use App\Models\Employee;
 use App\Services\EmployeeExportService;
 use App\Services\EmployeeQueryService;
 use App\Services\EmployeeWorkflowService;
+use App\Services\ExportHiringBernardTempService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Illuminate\Http\Request;
 
 class EmployeeWorkflowController extends Controller
 {
     public function __construct(
         private readonly EmployeeWorkflowService $workflowService,
         private readonly EmployeeQueryService $queryService,
-        private readonly EmployeeExportService $exportService
+        private readonly EmployeeExportService $exportService,
+        private readonly ExportHiringBernardTempService $exportHiringBernardTempService
     ) {
     }
 
@@ -80,6 +83,19 @@ class EmployeeWorkflowController extends Controller
     public function export(): StreamedResponse
     {
         return $this->exportService->export();
+    }
+
+    public function exportHiringTempBernard(Request $request): StreamedResponse
+    {
+        $store = null;
+
+        if ($request->filled('store_number')) {
+            $store = $this->workflowService->resolveStoreByNumber(
+                $request->query('store_number')
+            );
+        }
+
+        return $this->exportHiringBernardTempService->export($store);
     }
 
     public function exportTenure(EmployeeTenureExportRequest $request): StreamedResponse
