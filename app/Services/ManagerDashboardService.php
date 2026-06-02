@@ -52,10 +52,14 @@ class ManagerDashboardService
                             $join->on('employee_metric_values.employee_metric_id', '=', 'employee_metrics.id')
                                 ->whereIn('employee_metric_values.column_id', [2, 3, 10, 31]);
                         })
+                        ->join('employee_metric_columns', function ($join) {
+                            $join->on('employee_metric_columns.id', '=', 'employee_metric_values.column_id');
+                        })
                         ->select([
                             'employee_metrics.id',
                             'employee_metrics.employee_id',
                             'employee_metrics.metric_date',
+                            'employee_metric_columns.label as column_label',
                             'employee_metric_values.value',
                             'employee_metric_values.value_numeric',
                         ]);
