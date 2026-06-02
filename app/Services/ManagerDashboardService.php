@@ -95,7 +95,7 @@ class ManagerDashboardService
             'position' => $latestPosition?->position?->label,
             'base_pay' => $latestPay ? number_format((float) $latestPay->base_pay, 2, '.', '') : null,
             'performance_pay' => $latestPay ? number_format((float) $latestPay->performance_pay, 2, '.', '') : null,
-            'metric' => $metricEntry,
+            'metrics' => $metricEntry,
         ];
     }
 
@@ -129,18 +129,19 @@ class ManagerDashboardService
         ];
     }
 
-    private function resolveMetric(Employee $employee): ?array
+    private function resolveMetric(Employee $employee): array
     {
-        $metric = $employee->metrics->sortByDesc('metric_date')->first();
-
-        if ($metric === null) {
-            return null;
-        }
-
-        return [
-            'metric_date' => $metric->metric_date,
-            'value' => $metric->value,
-            'value_numeric' => $metric->value_numeric !== null ? (float) $metric->value_numeric : null,
-        ];
+        return $employee->metrics
+            ->sortByDesc('metric_date')
+            ->map(fn($metric) => [
+                'metric_date' => $metric->metric_date,
+                'label' => $metric->column_label,
+                'value' => $metric->value,
+                'value_numeric' => $metric->value_numeric !== null
+                    ? (float) $metric->value_numeric
+                    : null,
+            ])
+            ->values()
+            ->all();
     }
 }
