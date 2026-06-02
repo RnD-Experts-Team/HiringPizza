@@ -40,28 +40,17 @@ class ManagerDashboardService
             })
             ->with([
                 'obsession',
-                'positions' => function ($q) {
-                    $q->whereRaw('employee_positions.id = (
-                        SELECT p2.id FROM employee_positions p2
-                        WHERE p2.employee_id = employee_positions.employee_id
-                        ORDER BY p2.effective_date DESC, p2.id DESC LIMIT 1
-                    )')->with('position');
-                },
-                'payHistories' => function ($q) {
-                    $q->whereRaw('employee_pay_histories.id = (
-                        SELECT ph2.id FROM employee_pay_histories ph2
-                        WHERE ph2.employee_id = employee_pay_histories.employee_id
-                        ORDER BY ph2.effective_date DESC, ph2.id DESC LIMIT 1
-                    )');
-                },
                 'metrics' => function ($q) use ($weekStart, $weekEnd) {
+                    $previousWeekStart = $weekStart->subWeek();
+                    $previousWeekEnd = $weekEnd->subWeek();
+
                     $q->whereBetween('metric_date', [
-                            $weekStart->toDateString(),
-                            $weekEnd->toDateString(),
-                        ])
+                        $previousWeekStart->toDateString(),
+                        $previousWeekEnd->toDateString(),
+                    ])
                         ->join('employee_metric_values', function ($join) {
                             $join->on('employee_metric_values.employee_metric_id', '=', 'employee_metrics.id')
-                                 ->where('employee_metric_values.column_id', 3);
+                                ->whereIn('employee_metric_values.column_id', [2, 3, 10, 31]);
                         })
                         ->select([
                             'employee_metrics.id',
@@ -145,8 +134,8 @@ class ManagerDashboardService
         }
 
         return [
-            'metric_date'   => $metric->metric_date,
-            'value'         => $metric->value,
+            'metric_date' => $metric->metric_date,
+            'value' => $metric->value,
             'value_numeric' => $metric->value_numeric !== null ? (float) $metric->value_numeric : null,
         ];
     }
