@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\EmployeeStatus;
 use App\Models\Employee;
 use App\Models\Store;
 use Carbon\Carbon;
@@ -30,15 +31,10 @@ class ManagerDashboardService
                       ORDER BY s2.effective_date DESC, s2.id DESC LIMIT 1
                   )');
             })
-            ->whereHas('statusHistories', function ($q) {
-                $q->whereNotIn('status', ['resigned', 'terminated'])
-                    ->whereRaw('employee_status_histories.id = (
-                      SELECT sh2.id FROM employee_status_histories sh2
-                      WHERE sh2.employee_id = employee_status_histories.employee_id
-                      ORDER BY sh2.effective_date DESC, sh2.id DESC LIMIT 1
-                  )');
-            })
             ->with([
+                'statusHistories' => function ($q) {
+                    $q->orderBy('effective_date', 'desc')->orderBy('id', 'desc');
+                },
                 'obsession',
                 'metrics' => function ($q) use ($weekStart, $weekEnd) {
                     $previousWeekStart = $weekStart->subWeek();
@@ -67,7 +63,9 @@ class ManagerDashboardService
             ])
             ->orderBy('last_name')
             ->orderBy('first_name')
-            ->get();
+            ->get()
+            ->filter(fn(Employee $employee) => $this->isActiveEmployee($employee) || $employee->metrics->isNotEmpty())
+            ->values();
 
         return [
             'store_id' => $store->store_number,
@@ -91,12 +89,24 @@ class ManagerDashboardService
                 'middle' => $employee->middle_name,
                 'last' => $employee->last_name,
             ],
+            'status' => $this->isActiveEmployee($employee) ? 'active' : 'inactive',
             'birthday' => $this->resolveBirthday($employee, $date),
             'position' => $latestPosition?->position?->label,
             'base_pay' => $latestPay ? number_format((float) $latestPay->base_pay, 2, '.', '') : null,
             'performance_pay' => $latestPay ? number_format((float) $latestPay->performance_pay, 2, '.', '') : null,
             'metrics' => $metricEntry,
         ];
+    }
+
+    private function isActiveEmployee(Employee $employee): bool
+    {
+        $latestStatus = $employee->statusHistories->first()?->status;
+
+        if ($latestStatus === null) {
+            return true;
+        }
+
+        return !in_array($latestStatus->value, [EmployeeStatus::Resigned->value, EmployeeStatus::Terminated->value], true);
     }
 
     private function resolveBirthday(Employee $employee, CarbonImmutable $date): array
