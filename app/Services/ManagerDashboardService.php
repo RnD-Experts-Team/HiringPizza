@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\EmployeeStatus;
 use App\Models\Employee;
 use App\Models\Store;
 use Carbon\Carbon;
@@ -30,43 +31,31 @@ class ManagerDashboardService
                       ORDER BY s2.effective_date DESC, s2.id DESC LIMIT 1
                   )');
             })
-            ->whereHas('statusHistories', function ($q) {
-                $q->whereNotIn('status', ['resigned', 'terminated'])
-                    ->whereRaw('employee_status_histories.id = (
-                      SELECT sh2.id FROM employee_status_histories sh2
-                      WHERE sh2.employee_id = employee_status_histories.employee_id
-                      ORDER BY sh2.effective_date DESC, sh2.id DESC LIMIT 1
-                  )');
-            })
             ->with([
+                'statusHistories' => function ($q) {
+                    $q->orderBy('effective_date', 'desc')->orderBy('id', 'desc');
+                },
                 'obsession',
-                'positions' => function ($q) {
-                    $q->whereRaw('employee_positions.id = (
-                        SELECT p2.id FROM employee_positions p2
-                        WHERE p2.employee_id = employee_positions.employee_id
-                        ORDER BY p2.effective_date DESC, p2.id DESC LIMIT 1
-                    )')->with('position');
-                },
-                'payHistories' => function ($q) {
-                    $q->whereRaw('employee_pay_histories.id = (
-                        SELECT ph2.id FROM employee_pay_histories ph2
-                        WHERE ph2.employee_id = employee_pay_histories.employee_id
-                        ORDER BY ph2.effective_date DESC, ph2.id DESC LIMIT 1
-                    )');
-                },
                 'metrics' => function ($q) use ($weekStart, $weekEnd) {
+                    $previousWeekStart = $weekStart->subWeek();
+                    $previousWeekEnd = $weekEnd->subWeek();
+
                     $q->whereBetween('metric_date', [
-                            $weekStart->toDateString(),
-                            $weekEnd->toDateString(),
-                        ])
+                        $previousWeekStart->toDateString(),
+                        $previousWeekEnd->toDateString(),
+                    ])
                         ->join('employee_metric_values', function ($join) {
                             $join->on('employee_metric_values.employee_metric_id', '=', 'employee_metrics.id')
-                                 ->where('employee_metric_values.column_id', 3);
+                                ->whereIn('employee_metric_values.column_id', [2, 3, 10, 31]);
+                        })
+                        ->join('employee_metric_columns', function ($join) {
+                            $join->on('employee_metric_columns.id', '=', 'employee_metric_values.column_id');
                         })
                         ->select([
                             'employee_metrics.id',
                             'employee_metrics.employee_id',
                             'employee_metrics.metric_date',
+                            'employee_metric_columns.label as column_label',
                             'employee_metric_values.value',
                             'employee_metric_values.value_numeric',
                         ]);
@@ -74,7 +63,9 @@ class ManagerDashboardService
             ])
             ->orderBy('last_name')
             ->orderBy('first_name')
-            ->get();
+            ->get()
+            ->filter(fn(Employee $employee) => $this->isActiveEmployee($employee) || $employee->metrics->isNotEmpty())
+            ->values();
 
         return [
             'store_id' => $store->store_number,
@@ -98,12 +89,24 @@ class ManagerDashboardService
                 'middle' => $employee->middle_name,
                 'last' => $employee->last_name,
             ],
+            'status' => $this->isActiveEmployee($employee) ? 'active' : 'inactive',
             'birthday' => $this->resolveBirthday($employee, $date),
             'position' => $latestPosition?->position?->label,
             'base_pay' => $latestPay ? number_format((float) $latestPay->base_pay, 2, '.', '') : null,
             'performance_pay' => $latestPay ? number_format((float) $latestPay->performance_pay, 2, '.', '') : null,
-            'metric' => $metricEntry,
+            'metrics' => $metricEntry,
         ];
+    }
+
+    private function isActiveEmployee(Employee $employee): bool
+    {
+        $latestStatus = $employee->statusHistories->first()?->status;
+
+        if ($latestStatus === null) {
+            return true;
+        }
+
+        return !in_array($latestStatus->value, [EmployeeStatus::Resigned->value, EmployeeStatus::Terminated->value], true);
     }
 
     private function resolveBirthday(Employee $employee, CarbonImmutable $date): array
@@ -136,18 +139,19 @@ class ManagerDashboardService
         ];
     }
 
-    private function resolveMetric(Employee $employee): ?array
+    private function resolveMetric(Employee $employee): array
     {
-        $metric = $employee->metrics->sortByDesc('metric_date')->first();
-
-        if ($metric === null) {
-            return null;
-        }
-
-        return [
-            'metric_date'   => $metric->metric_date,
-            'value'         => $metric->value,
-            'value_numeric' => $metric->value_numeric !== null ? (float) $metric->value_numeric : null,
-        ];
+        return $employee->metrics
+            ->sortByDesc('metric_date')
+            ->map(fn($metric) => [
+                'metric_date' => $metric->metric_date,
+                'label' => $metric->column_label,
+                'value' => $metric->value,
+                'value_numeric' => $metric->value_numeric !== null
+                    ? (float) $metric->value_numeric
+                    : null,
+            ])
+            ->values()
+            ->all();
     }
 }
