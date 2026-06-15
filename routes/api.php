@@ -40,6 +40,11 @@ Route::prefix('v1')->middleware('auth.token.store')->group(function (): void {
     Route::put('reference-catalog', [ReferenceCatalogController::class, 'sync'])
         ->name('api.v1.reference-catalog.sync');
 
+    // Combined manager-dashboard page report (one call instead of three).
+    Route::get('reports/{store}/{date}', [ManagerDashboardController::class, 'reports'])
+        ->where(['date' => '[0-9]{4}-[0-9]{2}-[0-9]{2}'])
+        ->name('api.v1.reports.show');
+
     Route::prefix('stores/{storeId}')
         ->where(['storeId' => '[A-Za-z0-9_-]+'])
         ->group(function (): void {
