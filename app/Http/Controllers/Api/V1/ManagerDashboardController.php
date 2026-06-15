@@ -117,6 +117,7 @@ class ManagerDashboardController extends Controller
         $employees = EmployeeMetric::query()
             ->from('employee_metrics as em')
             ->join('employee_metric_values as emv', 'emv.employee_metric_id', '=', 'em.id')
+            ->join('employees as e', 'e.id', '=', 'em.employee_id')
             ->joinSub($latestEmployeeStores, 'latest_es', function ($join) {
                 $join->on('latest_es.employee_id', '=', 'em.employee_id');
             })
@@ -127,12 +128,13 @@ class ManagerDashboardController extends Controller
             ->join('stores as s', 's.id', '=', 'es.store_id')
             ->where('s.store_number', $store)
             ->whereBetween('em.metric_date', [$weekStartDate, $weekEndDate])
-            ->whereIn('emv.column_id', [2, 3, 10])
-            ->select('em.employee_id')
+            ->whereIn('emv.column_id', [1, 2, 3, 10])
+            ->select('em.employee_id', 'e.first_name', 'e.last_name')
+            ->selectRaw('MAX(CASE WHEN emv.column_id = 1 THEN emv.value END) as position')
             ->selectRaw('MAX(CASE WHEN emv.column_id = 3 THEN emv.value_numeric END) as column_3_value')
             ->selectRaw('MAX(CASE WHEN emv.column_id = 2 THEN emv.value_numeric END) as column_2_value')
             ->selectRaw('MAX(CASE WHEN emv.column_id = 10 THEN emv.value_numeric END) as column_10_value')
-            ->groupBy('em.employee_id')
+            ->groupBy('em.employee_id', 'e.first_name', 'e.last_name')
             ->havingRaw('MAX(CASE WHEN emv.column_id = 3 THEN emv.value_numeric END) >= 60')
             ->get();
 
@@ -143,6 +145,9 @@ class ManagerDashboardController extends Controller
             'week_end' => $weekEndDate,
             'employees' => $employees->map(fn($row) => [
                 'employee_id' => $row->employee_id,
+                'first_name' => $row->first_name,
+                'last_name' => $row->last_name,
+                'position' => $row->position,
                 'total_hours' => $row->column_3_value !== null ? round((float) $row->column_3_value, 2) : null,
                 'hourly_pay' => $row->column_2_value !== null ? round((float) $row->column_2_value, 2) : null,
                 'gross_pay' => $row->column_10_value !== null ? round((float) $row->column_10_value, 2) : null,
