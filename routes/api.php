@@ -16,6 +16,9 @@ Route::get('employees/export/csv', [EmployeeWorkflowController::class, 'export']
 Route::get('/average-hourly-pay/{store}/{date}', [ManagerDashboardController::class, 'averageHourlyPay'])
     ->middleware('auth.token.store');
 
+Route::get('high-hours-employees/{store}/{date}', [ManagerDashboardController::class, 'highHoursEmployees'])
+    ->middleware('auth.token.store');
+
 Route::get('employees/tenure/export/csv', [EmployeeWorkflowController::class, 'exportTenure'])
     ->name('api.v1.employees.tenure.export')->middleware('auth.secret.key');
 

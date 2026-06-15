@@ -61,6 +61,7 @@ class EmployeeMetricImportService
         $excludeHeaders = array_filter([$idHeader, $nameHeader, $storeHeader, $dateHeader]);
         $columnMap = $this->resolveColumns($headers, $excludeHeaders);
         $employeeIdMap = $this->loadEmployeeIdMap($idTypeId);
+        $existingEmployeeIds = $this->loadExistingEmployeeIds();
 
         $summary = [
             'rows_total' => 0,
@@ -87,7 +88,7 @@ class EmployeeMetricImportService
             }
 
             $employeeId = $employeeIdMap[$idValue] ?? null;
-            if ($employeeId === null) {
+            if ($employeeId === null || !isset($existingEmployeeIds[$employeeId])) {
                 $summary['unmatched']++;
                 $unmatched[] = [
                     'line' => $line,
@@ -289,6 +290,21 @@ class EmployeeMetricImportService
             }
 
             $map[$value] = (int) $row->employee_id;
+        }
+
+        return $map;
+    }
+
+    /**
+     * @return array<int, bool>
+     */
+    private function loadExistingEmployeeIds(): array
+    {
+        $employeeIds = DB::table('employees')->pluck('id')->all();
+        $map = [];
+
+        foreach ($employeeIds as $id) {
+            $map[(int) $id] = true;
         }
 
         return $map;
