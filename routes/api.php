@@ -13,6 +13,12 @@ use Illuminate\Support\Facades\Route;
 Route::get('employees/export/csv', [EmployeeWorkflowController::class, 'export'])
     ->name('api.v1.stores.employees.export')->middleware('auth.secret.key');
 
+Route::get('/average-hourly-pay/{store}/{date}', [ManagerDashboardController::class, 'averageHourlyPay'])
+    ->middleware('auth.token.store');
+
+Route::get('high-hours-employees/{store}/{date}', [ManagerDashboardController::class, 'highHoursEmployees'])
+    ->middleware('auth.token.store');
+
 Route::get('employees/tenure/export/csv', [EmployeeWorkflowController::class, 'exportTenure'])
     ->name('api.v1.employees.tenure.export')->middleware('auth.secret.key');
 
@@ -33,6 +39,11 @@ Route::prefix('v1')->middleware('auth.token.store')->group(function (): void {
 
     Route::put('reference-catalog', [ReferenceCatalogController::class, 'sync'])
         ->name('api.v1.reference-catalog.sync');
+
+    // Combined manager-dashboard page report (one call instead of three).
+    Route::get('reports/{store}/{date}', [ManagerDashboardController::class, 'reports'])
+        ->where(['date' => '[0-9]{4}-[0-9]{2}-[0-9]{2}'])
+        ->name('api.v1.reports.show');
 
     Route::prefix('stores/{storeId}')
         ->where(['storeId' => '[A-Za-z0-9_-]+'])
