@@ -254,39 +254,39 @@ class EmployeeWorkflowService
             'attachments.attachmentType',
         ]);
 
-        return $this->applyLatestEffectiveRelations($employee);
+        return $this->sortRelationsByEffectiveDate($employee);
     }
 
-    private function applyLatestEffectiveRelations(Employee $employee): Employee
+    private function sortRelationsByEffectiveDate(Employee $employee): Employee
     {
         if ($employee->relationLoaded('statusHistories')) {
-            $employee->setRelation('statusHistories', $this->latestEffectiveCollection($employee->statusHistories));
+            $employee->setRelation('statusHistories', $this->sortedByEffectiveDate($employee->statusHistories));
         }
 
         if ($employee->relationLoaded('payHistories')) {
-            $employee->setRelation('payHistories', $this->latestEffectiveCollection($employee->payHistories));
+            $employee->setRelation('payHistories', $this->sortedByEffectiveDate($employee->payHistories));
         }
 
         if ($employee->relationLoaded('financialInfos')) {
-            $employee->setRelation('financialInfos', $this->latestEffectiveCollection($employee->financialInfos));
+            $employee->setRelation('financialInfos', $this->sortedByEffectiveDate($employee->financialInfos));
         }
 
         if ($employee->relationLoaded('positions')) {
-            $employee->setRelation('positions', $this->latestEffectiveCollection($employee->positions));
+            $employee->setRelation('positions', $this->sortedByEffectiveDate($employee->positions));
         }
 
         if ($employee->relationLoaded('stores')) {
-            $employee->setRelation('stores', $this->latestEffectiveCollection($employee->stores));
+            $employee->setRelation('stores', $this->sortedByEffectiveDate($employee->stores));
         }
 
         if ($employee->relationLoaded('maritals')) {
-            $employee->setRelation('maritals', $this->latestEffectiveCollection($employee->maritals));
+            $employee->setRelation('maritals', $this->sortedByEffectiveDate($employee->maritals));
         }
 
         return $employee;
     }
 
-    private function latestEffectiveCollection($collection)
+    private function sortedByEffectiveDate($collection)
     {
         if ($collection->isEmpty()) {
             return $collection;
@@ -305,7 +305,7 @@ class EmployeeWorkflowService
             }
 
             return $rightDate <=> $leftDate;
-        })->take(1)->values();
+        })->values();
     }
 
     private function syncStoreAssignments(Employee $employee, Store $currentStore, array $rows): void
