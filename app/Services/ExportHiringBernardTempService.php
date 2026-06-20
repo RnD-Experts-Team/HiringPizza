@@ -27,8 +27,8 @@ class ExportHiringBernardTempService
 
             $query = Employee::query()
                 ->with([
-                    'statusHistories' => fn($q) => $q->orderBy('effective_date', 'desc'),
-                    'payHistories' => fn($q) => $q->orderBy('effective_date', 'desc'),
+                    'statusHistories' => fn($q) => $q->orderByDesc('effective_date')->orderByDesc('id'),
+                    'payHistories' => fn($q) => $q->orderByDesc('effective_date')->orderByDesc('id'),
                     'contacts',
                     'addresses',
                     'availabilityDays',
@@ -110,7 +110,7 @@ class ExportHiringBernardTempService
 
     private function buildRow(Employee $employee): array
     {
-        $latestStatusHistory = $this->latestByEffectiveDate($employee->statusHistories);
+        $latestStatusHistory = $this->getLatestStatusHistory($employee);
         $latestPayHistory = $this->latestByEffectiveDate($employee->payHistories);
         $latestStore = $this->latestByEffectiveDate($employee->stores);
         $latestPosition = $this->latestByEffectiveDate($employee->positions);
@@ -155,7 +155,6 @@ class ExportHiringBernardTempService
             $this->safeAttribute($primaryAddress, 'state'),
             $this->safeAttribute($primaryAddress, 'zip_code'),
             $this->safeAttribute($primaryAddress, 'country'),
-
             $this->formatFinancialInfo($latestFinancialInfo),
             $this->formatAvailabilityDays($employee->availabilityDays),
 
@@ -165,6 +164,14 @@ class ExportHiringBernardTempService
             $this->formatAttachmentNames($employee->attachments),
             $this->formatAttachmentTypes($employee->attachments),
         ]);
+    }
+
+    private function getLatestStatusHistory(Employee $employee): mixed
+    {
+        return $employee->statusHistories()
+            ->orderByDesc('effective_date')
+            ->orderByDesc('id')
+            ->first();
     }
 
     private function latestByEffectiveDate(Collection $items): mixed
@@ -278,13 +285,13 @@ class ExportHiringBernardTempService
             EmployeeStatus::OJE,
         ];
 
-        $hiredHistory = $employee->statusHistories
-            ->filter(function ($history) use ($hiredStatuses): bool {
-                $status = $this->safeAttribute($history, 'status');
-
-                return in_array($status, $hiredStatuses, true);
-            })
-            ->sortByDesc(fn($history) => $this->safeAttribute($history, 'effective_date'))
+        $hiredHistory = $employee->statusHistories()
+            ->whereIn('status', array_map(
+                fn ($status) => $status instanceof \BackedEnum ? $status->value : $status,
+                $hiredStatuses
+            ))
+            ->orderByDesc('effective_date')
+            ->orderByDesc('id')
             ->first();
 
         if (!$hiredHistory) {
