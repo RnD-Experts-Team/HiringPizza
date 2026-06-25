@@ -17,7 +17,7 @@ class SeparationRequestStoreRequest extends FormRequest
         return [
             'employee_id' => ['required', 'integer', 'exists:employees,id'],
             'separation_type' => ['required', Rule::in(['termination', 'resignation'])],
-            'final_working_day' => ['required', 'date', 'after_or_equal:today'],
+            'final_working_day' => ['required', 'date'],
             'termination_letter' => ['required_if:separation_type,termination', 'nullable', 'string', 'max:10000'],
             'termination_reason' => [
                 'required_if:separation_type,termination',
