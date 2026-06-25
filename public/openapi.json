@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "HiringPizza Workforce API",
-        "version": "1.2.0",
+        "version": "1.3.0",
         "description": "Workflow-first API for workforce management. Employee operations are store-scoped by store number. Global catalog endpoints are not store-scoped."
     },
     "servers": [
@@ -15,6 +15,7 @@
         { "name": "Workflow Requests" },
         { "name": "Separation Request Workflow" },
         { "name": "Hiring Request Workflow" },
+        { "name": "Milestone Gift Request Workflow" },
         { "name": "Reference Catalog" },
         { "name": "Employee Metrics" },
         { "name": "Manager Dashboard" }
@@ -667,8 +668,8 @@
         "/v1/stores/{storeNumber}/requests": {
             "get": {
                 "tags": ["Workflow Requests"],
-                "summary": "List store workflow requests (hiring + separation)",
-                "description": "Returns a unified paginated feed across hiring and separation workflows with filtering by type, status, decision, ownership, and dates.",
+                "summary": "List store workflow requests (hiring + separation + milestone gift)",
+                "description": "Returns a unified paginated feed across hiring, separation, and milestone gift workflows. Each item contains a `request_type` field (`separation`, `hiring`, or `milestone_gift`) and a matching typed object (`separation_request`, `hiring_request`, or `milestone_gift_request`); the other two are always `null`. For milestone gift requests `workflow_status` mirrors the request `stage` value directly (see `MilestoneGiftStage` enum). Use `request_type=milestone_gift` to filter only gift tickets.",
                 "parameters": [
                     { "$ref": "#/components/parameters/storeNumber" },
                     {
@@ -752,9 +753,21 @@
                         }
                     },
                     {
+                        "name": "milestone_gift_stage",
+                        "in": "query",
+                        "description": "Filter milestone gift requests by stage. Only applies when request_type includes milestone_gift.",
+                        "schema": { "$ref": "#/components/schemas/MilestoneGiftStage" }
+                    },
+                    {
+                        "name": "milestone",
+                        "in": "query",
+                        "description": "Filter milestone gift requests by the gift milestone.",
+                        "schema": { "$ref": "#/components/schemas/MilestoneGiftMilestone" }
+                    },
+                    {
                         "name": "employee_id",
                         "in": "query",
-                        "description": "Matches separation request employee or hired employee in hiring decision entries.",
+                        "description": "Matches separation request employee, hired employee in hiring decision entries, or milestone gift request employee.",
                         "schema": { "type": "integer" }
                     },
                     {
@@ -1150,6 +1163,509 @@
                     },
                     "422": { "description": "Validation error" },
                     "404": { "description": "Store or request not found" }
+                }
+            }
+        },
+
+        "/v1/stores/{storeNumber}/milestone-gift-questions": {
+            "get": {
+                "tags": ["Milestone Gift Request Workflow"],
+                "summary": "List milestone gift questions for the store",
+                "description": "Returns all **active** questions visible to this store: global questions (`store_id=null`) plus any questions created specifically for this store, ordered by `sort_order`. Call this endpoint before rendering the Stage 2 rating form to know which questions and options to display. Management of questions (create/update/delete) is done via the global `/v1/milestone-gift-questions` endpoints below.",
+                "parameters": [
+                    { "$ref": "#/components/parameters/storeNumber" }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Question list with options",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": { "$ref": "#/components/schemas/MilestoneGiftQuestionEntity" }
+                                        }
+                                    }
+                                },
+                                "example": {
+                                    "data": [
+                                        {
+                                            "id": 1,
+                                            "store_id": null,
+                                            "question_text": "How would you rate this employee's attendance?",
+                                            "question_type": "single_select",
+                                            "sort_order": 1,
+                                            "is_active": true,
+                                            "options": [
+                                                { "id": 1, "option_text": "Never calls off", "sort_order": 1 },
+                                                { "id": 2, "option_text": "Rarely calls off", "sort_order": 2 },
+                                                { "id": 3, "option_text": "Occasionally calls off", "sort_order": 3 },
+                                                { "id": 4, "option_text": "Frequently calls off", "sort_order": 4 }
+                                            ]
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": { "description": "Store not found" }
+                }
+            }
+        },
+
+        "/v1/milestone-gift-questions": {
+            "get": {
+                "tags": ["Milestone Gift Request Workflow"],
+                "summary": "List all milestone gift questions (global management)",
+                "description": "Returns **all** questions — global and store-specific, active and inactive — ordered by `sort_order`. Use this endpoint in admin/management UIs when building the question editor. Each question includes its options and a `store_id` field (`null` = global, integer = store-specific). To see only the questions available to a particular store's rating form, use `GET /v1/stores/{storeNumber}/milestone-gift-questions` instead.",
+                "responses": {
+                    "200": {
+                        "description": "All questions with options",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": { "$ref": "#/components/schemas/MilestoneGiftQuestionEntity" }
+                                        }
+                                    }
+                                },
+                                "example": {
+                                    "data": [
+                                        {
+                                            "id": 1,
+                                            "store_id": null,
+                                            "question_text": "How would you rate this employee's attendance?",
+                                            "question_type": "single_select",
+                                            "sort_order": 1,
+                                            "is_active": true,
+                                            "options": [
+                                                { "id": 1, "option_text": "Never calls off", "sort_order": 1 },
+                                                { "id": 2, "option_text": "Rarely calls off", "sort_order": 2 }
+                                            ]
+                                        },
+                                        {
+                                            "id": 4,
+                                            "store_id": 3,
+                                            "question_text": "Does this employee speak Spanish?",
+                                            "question_type": "single_select",
+                                            "sort_order": 10,
+                                            "is_active": false,
+                                            "options": []
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": ["Milestone Gift Request Workflow"],
+                "summary": "Create a milestone gift question (global management)",
+                "description": "Creates a new rating question. This is a **global** management endpoint — no store prefix in the URL.\n\n**Scope:**\n- Omit `store_id` or send `null` → question is **global** and will appear for every store's rating form.\n- Send a valid `store_id` → question is **store-specific** and will only appear in that store's rating form.\n\n**Validation:** `store_id` must be `null` or an existing store ID. It cannot be an arbitrary value.\n\n`question_type`:\n- `single_select` — reviewer must pick exactly one option.\n- `multi_select` — reviewer may pick one or more options.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": { "$ref": "#/components/schemas/MilestoneGiftQuestionRequest" },
+                            "examples": {
+                                "global": {
+                                    "summary": "Global question (applies to all stores)",
+                                    "value": {
+                                        "question_text": "How would you rate this employee's attendance?",
+                                        "question_type": "single_select",
+                                        "sort_order": 1
+                                    }
+                                },
+                                "store_specific": {
+                                    "summary": "Store-specific question",
+                                    "value": {
+                                        "question_text": "Does this employee speak Spanish fluently?",
+                                        "question_type": "single_select",
+                                        "sort_order": 10,
+                                        "store_id": 3
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Question created",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": { "data": { "$ref": "#/components/schemas/MilestoneGiftQuestionEntity" } }
+                                }
+                            }
+                        }
+                    },
+                    "422": { "description": "Validation error" }
+                }
+            }
+        },
+        "/v1/milestone-gift-questions/{questionId}": {
+            "put": {
+                "tags": ["Milestone Gift Request Workflow"],
+                "summary": "Update a milestone gift question (global management)",
+                "description": "Updates text, type, sort order, or active status of a question. Global management endpoint — no store prefix.",
+                "parameters": [
+                    { "name": "questionId", "in": "path", "required": true, "schema": { "type": "integer" } }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": { "$ref": "#/components/schemas/MilestoneGiftQuestionRequest" }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Question updated",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": { "data": { "$ref": "#/components/schemas/MilestoneGiftQuestionEntity" } }
+                                }
+                            }
+                        }
+                    },
+                    "422": { "description": "Validation error" }
+                }
+            },
+            "delete": {
+                "tags": ["Milestone Gift Request Workflow"],
+                "summary": "Deactivate a milestone gift question (global management)",
+                "description": "Sets `is_active=false`. The question will no longer appear in future rating forms. Existing submitted answers are not affected. Global management endpoint — no store prefix.",
+                "parameters": [
+                    { "name": "questionId", "in": "path", "required": true, "schema": { "type": "integer" } }
+                ],
+                "responses": {
+                    "204": { "description": "Deactivated" }
+                }
+            }
+        },
+        "/v1/milestone-gift-questions/{questionId}/options": {
+            "post": {
+                "tags": ["Milestone Gift Request Workflow"],
+                "summary": "Add an option to a question (global management)",
+                "description": "Appends a selectable option to a question. Global management endpoint — no store prefix.",
+                "parameters": [
+                    { "name": "questionId", "in": "path", "required": true, "schema": { "type": "integer" } }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": { "$ref": "#/components/schemas/MilestoneGiftOptionRequest" }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Option created",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": { "data": { "$ref": "#/components/schemas/MilestoneGiftQuestionOptionEntity" } }
+                                }
+                            }
+                        }
+                    },
+                    "422": { "description": "Validation error" }
+                }
+            }
+        },
+        "/v1/milestone-gift-questions/{questionId}/options/{optionId}": {
+            "put": {
+                "tags": ["Milestone Gift Request Workflow"],
+                "summary": "Update a question option (global management)",
+                "description": "Edits option text or sort order. Returns 404 if the option does not belong to the specified question. Global management endpoint — no store prefix.",
+                "parameters": [
+                    { "name": "questionId", "in": "path", "required": true, "schema": { "type": "integer" } },
+                    { "name": "optionId", "in": "path", "required": true, "schema": { "type": "integer" } }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": { "$ref": "#/components/schemas/MilestoneGiftOptionRequest" }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Option updated",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": { "data": { "$ref": "#/components/schemas/MilestoneGiftQuestionOptionEntity" } }
+                                }
+                            }
+                        }
+                    },
+                    "422": { "description": "Validation error" },
+                    "404": { "description": "Option does not belong to this question" }
+                }
+            },
+            "delete": {
+                "tags": ["Milestone Gift Request Workflow"],
+                "summary": "Remove a question option (global management)",
+                "description": "Permanently deletes an option. Returns 404 if the option does not belong to the specified question. Global management endpoint — no store prefix.",
+                "parameters": [
+                    { "name": "questionId", "in": "path", "required": true, "schema": { "type": "integer" } },
+                    { "name": "optionId", "in": "path", "required": true, "schema": { "type": "integer" } }
+                ],
+                "responses": {
+                    "204": { "description": "Deleted" },
+                    "404": { "description": "Option does not belong to this question" }
+                }
+            }
+        },
+
+        "/v1/stores/{storeNumber}/milestone-gift-requests": {
+            "post": {
+                "tags": ["Milestone Gift Request Workflow"],
+                "summary": "Stage 1 — Create milestone gift ticket",
+                "description": "## Workflow Overview\n\nThe milestone gift workflow has the following stages:\n\n```\ncreated → rating → gift_decision → final_status → closed\n                               ↘ cancelled\n```\n\n**Stage 1 (this endpoint):** The manager creates a ticket by selecting an employee and the gift milestone. This moves the request to stage `created`.\n\n**Stage 2** (`POST /{id}/rating`): Rating questions are answered. Moves to `rating`.\n\n**Stage 3** (`POST /{id}/gift-decision`): Gift details are recorded or the ticket is cancelled. Moves to `gift_decision` or `cancelled`.\n\n**Stage 4** (`POST /{id}/final-status`): Delivery status is set and optionally the ticket is closed. Moves to `final_status` or `closed`. Can be called again to switch status.",
+                "parameters": [
+                    { "$ref": "#/components/parameters/storeNumber" }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": { "$ref": "#/components/schemas/MilestoneGiftRequestStoreRequest" },
+                            "example": {
+                                "employee_id": 44,
+                                "milestone": "1_year"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Ticket created (stage: created)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": { "data": { "$ref": "#/components/schemas/MilestoneGiftRequestEntity" } }
+                                },
+                                "example": {
+                                    "data": {
+                                        "id": 1,
+                                        "store_id": 3,
+                                        "user_id": 7,
+                                        "employee_id": 44,
+                                        "milestone": "1_year",
+                                        "milestone_other": null,
+                                        "stage": "created",
+                                        "employee": { "id": 44, "first_name": "Jane", "last_name": "Doe" },
+                                        "rating": null,
+                                        "decision": null,
+                                        "final_status": null,
+                                        "created_at": "2026-06-25T10:00:00.000000Z",
+                                        "updated_at": "2026-06-25T10:00:00.000000Z"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "422": { "description": "Validation error" },
+                    "404": { "description": "Store or employee not found / employee not in store" }
+                }
+            }
+        },
+        "/v1/stores/{storeNumber}/milestone-gift-requests/{milestoneGiftRequestId}/rating": {
+            "post": {
+                "tags": ["Milestone Gift Request Workflow"],
+                "summary": "Stage 2 — Submit employee rating",
+                "description": "Submits answers to all active milestone gift questions for this store. The request must currently be in stage `created`.\n\n**answers** is an array with one entry per question. For `single_select` questions pass a single integer in `option_ids`. For `multi_select` questions pass an array of integers.\n\nFetch the current question list first via `GET /v1/stores/{storeNumber}/milestone-gift-questions`.\n\nMoves the ticket to stage `rating`.",
+                "parameters": [
+                    { "$ref": "#/components/parameters/storeNumber" },
+                    { "name": "milestoneGiftRequestId", "in": "path", "required": true, "schema": { "type": "integer" } }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": { "$ref": "#/components/schemas/MilestoneGiftRatingRequest" },
+                            "example": {
+                                "answers": [
+                                    { "question_id": 1, "option_ids": 1 },
+                                    { "question_id": 2, "option_ids": 2 },
+                                    { "question_id": 3, "option_ids": [1, 3, 7] }
+                                ],
+                                "additional_comments": "Great attendance, reliable team member."
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Rating submitted (stage moves to: rating)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": { "data": { "$ref": "#/components/schemas/MilestoneGiftRatingEntity" } }
+                                }
+                            }
+                        }
+                    },
+                    "422": { "description": "Validation error or wrong stage" },
+                    "404": { "description": "Request not found in this store" }
+                }
+            }
+        },
+        "/v1/stores/{storeNumber}/milestone-gift-requests/{milestoneGiftRequestId}/gift-decision": {
+            "post": {
+                "tags": ["Milestone Gift Request Workflow"],
+                "summary": "Stage 3 — Record gift decision or cancel",
+                "description": "Records what gift was sent (or cancels the ticket). The request must currently be in stage `rating` or `gift_decision` (re-submitting updates the existing decision).\n\n**To cancel:** send `is_cancelled: true` with an optional `cancellation_reason`. Stage moves to `cancelled`.\n\n**To record a gift:** send `is_cancelled: false` with `gift_description`, `gift_cost`, `delivery_date`, and optionally `sent_to_store`. Stage moves to `gift_decision`.\n\nCalling this endpoint again while in `gift_decision` is valid — it updates the decision (e.g., to flip `sent_to_store` once the gift ships).",
+                "parameters": [
+                    { "$ref": "#/components/parameters/storeNumber" },
+                    { "name": "milestoneGiftRequestId", "in": "path", "required": true, "schema": { "type": "integer" } }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": { "$ref": "#/components/schemas/MilestoneGiftDecisionRequest" },
+                            "examples": {
+                                "record_gift": {
+                                    "summary": "Record gift details",
+                                    "value": {
+                                        "is_cancelled": false,
+                                        "gift_description": "Amazon Gift Card",
+                                        "gift_cost": 25.00,
+                                        "delivery_date": "2026-07-01",
+                                        "sent_to_store": false
+                                    }
+                                },
+                                "update_sent": {
+                                    "summary": "Mark gift as sent to store",
+                                    "value": {
+                                        "is_cancelled": false,
+                                        "gift_description": "Amazon Gift Card",
+                                        "gift_cost": 25.00,
+                                        "delivery_date": "2026-07-01",
+                                        "sent_to_store": true
+                                    }
+                                },
+                                "cancel": {
+                                    "summary": "Cancel the ticket",
+                                    "value": {
+                                        "is_cancelled": true,
+                                        "cancellation_reason": "Employee left before gift was arranged."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Decision recorded (stage: gift_decision or cancelled)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": { "data": { "$ref": "#/components/schemas/MilestoneGiftDecisionEntity" } }
+                                }
+                            }
+                        }
+                    },
+                    "422": { "description": "Validation error or wrong stage" },
+                    "404": { "description": "Request not found in this store" }
+                }
+            }
+        },
+        "/v1/stores/{storeNumber}/milestone-gift-requests/{milestoneGiftRequestId}/final-status": {
+            "post": {
+                "tags": ["Milestone Gift Request Workflow"],
+                "summary": "Stage 4 — Set final delivery status (and optionally close)",
+                "description": "Sets or updates the final gift delivery status. The request must be in stage `gift_decision`, `final_status`, or `closed`.\n\n**Status options:**\n- `delivered_to_employee` — Gift handed directly to the employee.\n- `sent_to_store_awaiting_pickup` — Gift shipped to the store; employee hasn't picked it up yet.\n- `not_delivered_no_longer_with_company` — Employee left; gift was not delivered.\n- `not_delivered_other_reason` — Gift not delivered for another reason (requires `status_other_reason`).\n\nFor each status you must supply a `confirmation_date`.\n\nThis endpoint can be called **multiple times** to switch between statuses (e.g., from `sent_to_store_awaiting_pickup` to `delivered_to_employee` once the employee picks it up). Each call updates the single status record — there is no history of status changes.\n\n**To close the ticket:** include `\"close\": true`. The ticket moves to stage `closed` and `closing_notes` (optional) are recorded. A closed ticket's status can still be updated by calling this endpoint again.",
+                "parameters": [
+                    { "$ref": "#/components/parameters/storeNumber" },
+                    { "name": "milestoneGiftRequestId", "in": "path", "required": true, "schema": { "type": "integer" } }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": { "$ref": "#/components/schemas/MilestoneGiftFinalStatusRequest" },
+                            "examples": {
+                                "set_status": {
+                                    "summary": "Set status without closing",
+                                    "value": {
+                                        "status": "sent_to_store_awaiting_pickup",
+                                        "confirmation_date": "2026-07-02",
+                                        "close": false
+                                    }
+                                },
+                                "switch_and_close": {
+                                    "summary": "Switch status and close ticket",
+                                    "value": {
+                                        "status": "delivered_to_employee",
+                                        "confirmation_date": "2026-07-05",
+                                        "close": true,
+                                        "closing_notes": "Employee confirmed receipt."
+                                    }
+                                },
+                                "not_delivered_other": {
+                                    "summary": "Not delivered — other reason",
+                                    "value": {
+                                        "status": "not_delivered_other_reason",
+                                        "status_other_reason": "Address on file was incorrect.",
+                                        "confirmation_date": "2026-07-10",
+                                        "close": true
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Final status set (stage: final_status or closed)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": { "data": { "$ref": "#/components/schemas/MilestoneGiftFinalStatusEntity" } }
+                                },
+                                "example": {
+                                    "data": {
+                                        "id": 1,
+                                        "milestone_gift_request_id": 1,
+                                        "user_id": 7,
+                                        "status": "delivered_to_employee",
+                                        "status_other_reason": null,
+                                        "confirmation_date": "2026-07-05",
+                                        "closing_notes": "Employee confirmed receipt.",
+                                        "closed_at": "2026-06-25T14:00:00.000000Z",
+                                        "created_at": "2026-06-25T14:00:00.000000Z",
+                                        "updated_at": "2026-06-25T14:00:00.000000Z"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "422": { "description": "Validation error or wrong stage" },
+                    "404": { "description": "Request not found in this store" }
                 }
             }
         }
@@ -1949,11 +2465,34 @@
             },
             "RequestType": {
                 "type": "string",
-                "enum": ["separation", "hiring"]
+                "enum": ["separation", "hiring", "milestone_gift"]
             },
             "WorkflowRequestStatus": {
                 "type": "string",
-                "enum": ["pending", "rejected", "completed"]
+                "description": "For separation requests: pending | rejected | completed. For hiring requests: pending | completed. For milestone gift requests: the stage value (created | rating | gift_decision | final_status | closed | cancelled).",
+                "enum": ["pending", "rejected", "completed", "created", "rating", "gift_decision", "final_status", "closed", "cancelled"]
+            },
+            "MilestoneGiftMilestone": {
+                "type": "string",
+                "enum": ["30_days", "90_days", "6_months", "1_year", "2_years", "other"]
+            },
+            "MilestoneGiftStage": {
+                "type": "string",
+                "enum": ["created", "rating", "gift_decision", "final_status", "closed", "cancelled"],
+                "description": "created → rating → gift_decision → final_status → closed (or cancelled from gift_decision)"
+            },
+            "MilestoneGiftFinalStatusType": {
+                "type": "string",
+                "enum": [
+                    "delivered_to_employee",
+                    "sent_to_store_awaiting_pickup",
+                    "not_delivered_no_longer_with_company",
+                    "not_delivered_other_reason"
+                ]
+            },
+            "MilestoneGiftQuestionType": {
+                "type": "string",
+                "enum": ["single_select", "multi_select"]
             },
             "WorkflowRequestLatestDecision": {
                 "type": ["object", "null"],
@@ -2007,6 +2546,14 @@
                         "allOf": [
                             {
                                 "$ref": "#/components/schemas/HiringRequestEntity"
+                            }
+                        ],
+                        "nullable": true
+                    },
+                    "milestone_gift_request": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/MilestoneGiftRequestEntity"
                             }
                         ],
                         "nullable": true
@@ -2486,6 +3033,205 @@
                         "type": "array",
                         "items": { "$ref": "#/components/schemas/ManagerDashboardEmployee" }
                     }
+                }
+            },
+
+            "MilestoneGiftQuestionOptionEntity": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "integer" },
+                    "milestone_gift_question_id": { "type": "integer" },
+                    "option_text": { "type": "string" },
+                    "sort_order": { "type": "integer" },
+                    "created_at": { "type": "string", "format": "date-time" },
+                    "updated_at": { "type": "string", "format": "date-time" }
+                }
+            },
+            "MilestoneGiftQuestionEntity": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "integer" },
+                    "store_id": { "type": ["integer", "null"], "description": "null = global question; integer = store-specific" },
+                    "question_text": { "type": "string" },
+                    "question_type": { "$ref": "#/components/schemas/MilestoneGiftQuestionType" },
+                    "sort_order": { "type": "integer" },
+                    "is_active": { "type": "boolean" },
+                    "options": {
+                        "type": "array",
+                        "items": { "$ref": "#/components/schemas/MilestoneGiftQuestionOptionEntity" }
+                    },
+                    "created_at": { "type": "string", "format": "date-time" },
+                    "updated_at": { "type": "string", "format": "date-time" }
+                }
+            },
+            "MilestoneGiftQuestionRequest": {
+                "type": "object",
+                "required": ["question_text", "question_type"],
+                "properties": {
+                    "question_text": { "type": "string", "maxLength": 500 },
+                    "question_type": { "$ref": "#/components/schemas/MilestoneGiftQuestionType" },
+                    "sort_order": { "type": "integer", "minimum": 0 },
+                    "store_id": { "type": ["integer", "null"], "description": "Omit or null for global; set to a store id for store-specific." },
+                    "is_active": { "type": "boolean", "default": true }
+                }
+            },
+            "MilestoneGiftOptionRequest": {
+                "type": "object",
+                "required": ["option_text"],
+                "properties": {
+                    "option_text": { "type": "string", "maxLength": 255 },
+                    "sort_order": { "type": "integer", "minimum": 0 }
+                }
+            },
+            "MilestoneGiftRequestStoreRequest": {
+                "type": "object",
+                "required": ["employee_id", "milestone"],
+                "properties": {
+                    "employee_id": { "type": "integer", "description": "The employee to receive the gift. Must be assigned to the current store." },
+                    "milestone": { "$ref": "#/components/schemas/MilestoneGiftMilestone" },
+                    "milestone_other": { "type": "string", "maxLength": 255, "description": "Required when milestone is 'other'." }
+                }
+            },
+            "MilestoneGiftRatingRequest": {
+                "type": "object",
+                "required": ["answers"],
+                "properties": {
+                    "answers": {
+                        "type": "array",
+                        "minItems": 1,
+                        "description": "One entry per active question. Fetch questions first via GET /v1/stores/{storeNumber}/milestone-gift-questions.",
+                        "items": {
+                            "type": "object",
+                            "required": ["question_id", "option_ids"],
+                            "properties": {
+                                "question_id": { "type": "integer" },
+                                "option_ids": {
+                                    "description": "For single_select: pass a single integer. For multi_select: pass an array of integers.",
+                                    "oneOf": [
+                                        { "type": "integer" },
+                                        { "type": "array", "items": { "type": "integer" } }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "additional_comments": { "type": ["string", "null"], "maxLength": 2000 }
+                }
+            },
+            "MilestoneGiftDecisionRequest": {
+                "type": "object",
+                "required": ["is_cancelled"],
+                "properties": {
+                    "is_cancelled": { "type": "boolean" },
+                    "cancellation_reason": { "type": ["string", "null"], "maxLength": 1000, "description": "Required when is_cancelled is true." },
+                    "gift_description": { "type": ["string", "null"], "maxLength": 500, "description": "Required when is_cancelled is false." },
+                    "gift_cost": { "type": ["number", "null"], "minimum": 0, "maximum": 99999.99, "description": "Required when is_cancelled is false." },
+                    "delivery_date": { "type": ["string", "null"], "format": "date", "description": "Required when is_cancelled is false." },
+                    "sent_to_store": { "type": ["boolean", "null"], "description": "Whether the gift was physically sent to the store. Can be updated by re-calling this endpoint." }
+                }
+            },
+            "MilestoneGiftFinalStatusRequest": {
+                "type": "object",
+                "required": ["status", "confirmation_date"],
+                "properties": {
+                    "status": { "$ref": "#/components/schemas/MilestoneGiftFinalStatusType" },
+                    "status_other_reason": { "type": ["string", "null"], "maxLength": 500, "description": "Required when status is not_delivered_other_reason." },
+                    "confirmation_date": { "type": "string", "format": "date", "description": "Date the status was confirmed." },
+                    "close": { "type": "boolean", "default": false, "description": "Pass true to close the ticket. Stage moves to closed." },
+                    "closing_notes": { "type": ["string", "null"], "maxLength": 2000, "description": "Optional notes recorded when closing." }
+                }
+            },
+            "MilestoneGiftRatingAnswerEntity": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "integer" },
+                    "milestone_gift_question_id": { "type": "integer" },
+                    "question": { "$ref": "#/components/schemas/MilestoneGiftQuestionEntity" },
+                    "selected_options": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": { "type": "integer" },
+                                "question_option": { "$ref": "#/components/schemas/MilestoneGiftQuestionOptionEntity" }
+                            }
+                        }
+                    }
+                }
+            },
+            "MilestoneGiftRatingEntity": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "integer" },
+                    "milestone_gift_request_id": { "type": "integer" },
+                    "user_id": { "type": "integer" },
+                    "additional_comments": { "type": ["string", "null"] },
+                    "submitted_at": { "type": "string", "format": "date-time" },
+                    "answers": {
+                        "type": "array",
+                        "items": { "$ref": "#/components/schemas/MilestoneGiftRatingAnswerEntity" }
+                    },
+                    "created_at": { "type": "string", "format": "date-time" },
+                    "updated_at": { "type": "string", "format": "date-time" }
+                }
+            },
+            "MilestoneGiftDecisionEntity": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "integer" },
+                    "milestone_gift_request_id": { "type": "integer" },
+                    "user_id": { "type": "integer" },
+                    "is_cancelled": { "type": "boolean" },
+                    "cancellation_reason": { "type": ["string", "null"] },
+                    "gift_description": { "type": ["string", "null"] },
+                    "gift_cost": { "type": ["string", "null"], "description": "Decimal as string, e.g. \"25.00\"" },
+                    "delivery_date": { "type": ["string", "null"], "format": "date" },
+                    "sent_to_store": { "type": ["boolean", "null"] },
+                    "decided_at": { "type": "string", "format": "date-time" },
+                    "created_at": { "type": "string", "format": "date-time" },
+                    "updated_at": { "type": "string", "format": "date-time" }
+                }
+            },
+            "MilestoneGiftFinalStatusEntity": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "integer" },
+                    "milestone_gift_request_id": { "type": "integer" },
+                    "user_id": { "type": "integer" },
+                    "status": { "$ref": "#/components/schemas/MilestoneGiftFinalStatusType" },
+                    "status_other_reason": { "type": ["string", "null"] },
+                    "confirmation_date": { "type": "string", "format": "date" },
+                    "closing_notes": { "type": ["string", "null"] },
+                    "closed_at": { "type": ["string", "null"], "format": "date-time" },
+                    "created_at": { "type": "string", "format": "date-time" },
+                    "updated_at": { "type": "string", "format": "date-time" }
+                }
+            },
+            "MilestoneGiftRequestEntity": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "integer" },
+                    "store_id": { "type": "integer" },
+                    "user_id": { "type": "integer" },
+                    "employee_id": { "type": "integer" },
+                    "milestone": { "$ref": "#/components/schemas/MilestoneGiftMilestone" },
+                    "milestone_other": { "type": ["string", "null"] },
+                    "stage": { "$ref": "#/components/schemas/MilestoneGiftStage" },
+                    "employee": { "type": "object", "description": "Loaded employee relation (id, first_name, last_name, etc.)" },
+                    "rating": {
+                        "allOf": [{ "$ref": "#/components/schemas/MilestoneGiftRatingEntity" }],
+                        "nullable": true
+                    },
+                    "decision": {
+                        "allOf": [{ "$ref": "#/components/schemas/MilestoneGiftDecisionEntity" }],
+                        "nullable": true
+                    },
+                    "final_status": {
+                        "allOf": [{ "$ref": "#/components/schemas/MilestoneGiftFinalStatusEntity" }],
+                        "nullable": true
+                    },
+                    "created_at": { "type": "string", "format": "date-time" },
+                    "updated_at": { "type": "string", "format": "date-time" }
                 }
             }
         }
