@@ -9,8 +9,8 @@ return new class extends Migration {
     {
         Schema::create('milestone_gift_final_statuses', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('milestone_gift_request_id')->constrained('milestone_gift_requests')->onDelete('cascade');
-            $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
+            $table->unsignedBigInteger('milestone_gift_request_id');
+            $table->unsignedBigInteger('user_id');
             $table->enum('status', [
                 'delivered_to_employee',
                 'sent_to_store_awaiting_pickup',
@@ -22,6 +22,16 @@ return new class extends Migration {
             $table->text('closing_notes')->nullable();
             $table->dateTime('closed_at')->nullable();
             $table->timestamps();
+
+            $table->foreign('milestone_gift_request_id', 'mgfs_request_fk')
+                ->references('id')
+                ->on('milestone_gift_requests')
+                ->onDelete('cascade');
+
+            $table->foreign('user_id', 'mgfs_user_fk')
+                ->references('id')
+                ->on('users')
+                ->onDelete('cascade');
 
             $table->index(['milestone_gift_request_id'], 'mgfs_request_index');
         });

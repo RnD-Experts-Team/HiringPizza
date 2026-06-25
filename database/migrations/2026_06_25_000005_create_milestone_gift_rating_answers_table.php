@@ -9,9 +9,19 @@ return new class extends Migration {
     {
         Schema::create('milestone_gift_rating_answers', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('milestone_gift_rating_id')->constrained('milestone_gift_ratings')->onDelete('cascade');
-            $table->foreignId('milestone_gift_question_id')->constrained('milestone_gift_questions')->onDelete('cascade');
+            $table->unsignedBigInteger('milestone_gift_rating_id');
+            $table->unsignedBigInteger('milestone_gift_question_id');
             $table->timestamps();
+
+            $table->foreign('milestone_gift_rating_id', 'mgra_rating_fk')
+                ->references('id')
+                ->on('milestone_gift_ratings')
+                ->onDelete('cascade');
+
+            $table->foreign('milestone_gift_question_id', 'mgra_question_fk')
+                ->references('id')
+                ->on('milestone_gift_questions')
+                ->onDelete('cascade');
 
             $table->index(['milestone_gift_rating_id'], 'mgra_rating_index');
         });

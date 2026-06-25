@@ -9,8 +9,8 @@ return new class extends Migration {
     {
         Schema::create('milestone_gift_decisions', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('milestone_gift_request_id')->constrained('milestone_gift_requests')->onDelete('cascade');
-            $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
+            $table->unsignedBigInteger('milestone_gift_request_id');
+            $table->unsignedBigInteger('user_id');
             $table->boolean('is_cancelled')->default(false);
             $table->text('cancellation_reason')->nullable();
             $table->string('gift_description')->nullable();
@@ -19,6 +19,16 @@ return new class extends Migration {
             $table->boolean('sent_to_store')->nullable();
             $table->dateTime('decided_at');
             $table->timestamps();
+
+            $table->foreign('milestone_gift_request_id', 'mgd_request_fk')
+                ->references('id')
+                ->on('milestone_gift_requests')
+                ->onDelete('cascade');
+
+            $table->foreign('user_id', 'mgd_user_fk')
+                ->references('id')
+                ->on('users')
+                ->onDelete('cascade');
 
             $table->index(['milestone_gift_request_id'], 'mgd_request_index');
         });
