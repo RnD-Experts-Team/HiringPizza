@@ -49,8 +49,10 @@ class SeparationRequestWorkflowService
 
             $this->storeAttachments($separationRequest, $data['attachments'] ?? []);
 
+            $loaded = $this->load($separationRequest);
+            $this->sendCreatedNotification($store, $separationRequest, $employee);
 
-            return $this->load($separationRequest);
+            return $loaded;
         });
     }
 
@@ -64,6 +66,8 @@ class SeparationRequestWorkflowService
                 'notes' => $data['notes'] ?? null,
                 'completed_at' => $data['decision'] === 'completed' ? now() : null,
             ]);
+
+            $this->sendDecisionNotification($separationRequest);
 
             // If decision is completed, update employee status
             if ($data['decision'] === 'completed') {
@@ -104,6 +108,40 @@ class SeparationRequestWorkflowService
 
             return $decision;
         });
+    }
+
+    private function sendCreatedNotification(Store $store, SeparationRequest $request, Employee $employee): void
+    {
+        $employeeName = trim("{$employee->first_name} {$employee->last_name}");
+
+        $this->recordEvent('notifications.v1.notification.role.send', [
+            'channels' => ['web'],
+            'roles'    => ['Hiring Specialist', 'Hiring Manager'],
+            'stores'   => [$store->store_number],
+            'payload'  => [
+                'type'       => 'separation_request_created',
+                'title'      => 'Separation request submitted',
+                'body'       => "A separation request for {$employeeName} has been submitted for Store {$store->store_number}.",
+                'action_url' => "/hiring/store/{$store->store_number}/separation-requests/{$request->id}",
+            ],
+        ]);
+    }
+
+    private function sendDecisionNotification(SeparationRequest $request): void
+    {
+        $storeNumber = $request->store()->value('store_number');
+
+        $this->recordEvent('notifications.v1.notification.role.send', [
+            'channels' => ['web'],
+            'roles'    => ['Store Manager'],
+            'stores'   => [$storeNumber],
+            'payload'  => [
+                'type'       => 'separation_request_decided',
+                'title'      => 'Separation request decision made',
+                'body'       => "A decision has been made on separation request #{$request->id} for Store {$storeNumber}.",
+                'action_url' => "/hiring/store/{$storeNumber}/separation-requests/{$request->id}",
+            ],
+        ]);
     }
 
     public function load(SeparationRequest $separationRequest): SeparationRequest

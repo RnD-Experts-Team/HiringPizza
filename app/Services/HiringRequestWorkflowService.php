@@ -2,12 +2,15 @@
 
 namespace App\Services;
 
+use App\Jobs\PublishOutboxEventJob;
 use App\Models\Employee;
 use App\Models\HiringRequest;
 use App\Models\HiringRequestCandidate;
 use App\Models\HiringRequestDecision;
 use App\Models\HiringRequestPosition;
 use App\Models\Store;
+use App\Services\HiringEvents\HiringEventFactory;
+use App\Services\HiringEvents\HiringOutboxService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
@@ -52,6 +55,8 @@ class HiringRequestWorkflowService
             }
 
 
+            $this->sendCreatedNotification($store, $hiringRequest);
+
             return $this->load($hiringRequest);
         });
     }
@@ -83,8 +88,53 @@ class HiringRequestWorkflowService
             }
 
 
+            $this->sendDecisionNotification($hiringRequest);
+
             return $decision->load('employees.employee');
         });
+    }
+
+    private function sendCreatedNotification(Store $store, HiringRequest $request): void
+    {
+        $this->recordEvent('notifications.v1.notification.role.send', [
+            'channels' => ['web'],
+            'roles'    => ['Hiring Specialist', 'Hiring Manager'],
+            'stores'   => [$store->store_number],
+            'payload'  => [
+                'type'       => 'hiring_request_created',
+                'title'      => 'Hiring request submitted',
+                'body'       => "A hiring request for {$request->employees_needed} employee(s) has been submitted for Store {$store->store_number}.",
+                'action_url' => "/hiring/store/{$store->store_number}/hiring-requests/{$request->id}",
+            ],
+        ]);
+    }
+
+    private function sendDecisionNotification(HiringRequest $request): void
+    {
+        $storeNumber = $request->store()->value('store_number');
+
+        $this->recordEvent('notifications.v1.notification.role.send', [
+            'channels' => ['web'],
+            'roles'    => ['Store Manager'],
+            'stores'   => [$storeNumber],
+            'payload'  => [
+                'type'       => 'hiring_request_decided',
+                'title'      => 'Hiring request decision made',
+                'body'       => "A decision has been made on hiring request #{$request->id} for Store {$storeNumber}.",
+                'action_url' => "/hiring/store/{$storeNumber}/hiring-requests/{$request->id}",
+            ],
+        ]);
+    }
+
+    private function recordEvent(string $subject, array $data): void
+    {
+        $factory = app(HiringEventFactory::class);
+        $outbox  = app(HiringOutboxService::class);
+
+        $envelope = $factory->make($subject, $data);
+        $row      = $outbox->record($subject, $envelope);
+
+        PublishOutboxEventJob::dispatch($row->id);
     }
 
     public function load(HiringRequest $hiringRequest): HiringRequest

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\MilestoneGiftFinalStatusType;
 use App\Enums\MilestoneGiftStage;
+use App\Jobs\PublishOutboxEventJob;
 use App\Models\Employee;
 use App\Models\MilestoneGiftDecision;
 use App\Models\MilestoneGiftFinalStatus;
@@ -14,6 +15,8 @@ use App\Models\MilestoneGiftRatingAnswer;
 use App\Models\MilestoneGiftRatingAnswerOption;
 use App\Models\MilestoneGiftRequest;
 use App\Models\Store;
+use App\Services\HiringEvents\HiringEventFactory;
+use App\Services\HiringEvents\HiringOutboxService;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -41,7 +44,10 @@ class MilestoneGiftWorkflowService
                 'stage' => MilestoneGiftStage::Created,
             ]);
 
-            return $this->load($request);
+            $loaded = $this->load($request);
+            $this->sendCreatedNotification($store, $request, $employee);
+
+            return $loaded;
         });
     }
 
@@ -223,6 +229,34 @@ class MilestoneGiftWorkflowService
     public function removeOption(MilestoneGiftQuestionOption $option): void
     {
         $option->delete();
+    }
+
+    private function sendCreatedNotification(Store $store, MilestoneGiftRequest $request, Employee $employee): void
+    {
+        $employeeName = trim("{$employee->first_name} {$employee->last_name}");
+
+        $this->recordEvent('notifications.v1.notification.role.send', [
+            'channels' => ['web'],
+            'roles'    => ['Store Manager'],
+            'stores'   => [$store->store_number],
+            'payload'  => [
+                'type'       => 'milestone_gift_request_created',
+                'title'      => 'Milestone gift request submitted',
+                'body'       => "A milestone gift request for {$employeeName} has been submitted for Store {$store->store_number}.",
+                'action_url' => "/hiring/store/{$store->store_number}/milestone-gift-requests/{$request->id}",
+            ],
+        ]);
+    }
+
+    private function recordEvent(string $subject, array $data): void
+    {
+        $factory = app(HiringEventFactory::class);
+        $outbox  = app(HiringOutboxService::class);
+
+        $envelope = $factory->make($subject, $data);
+        $row      = $outbox->record($subject, $envelope);
+
+        PublishOutboxEventJob::dispatch($row->id);
     }
 
     protected function assertEmployeeInStore(Store $store, Employee $employee): void
