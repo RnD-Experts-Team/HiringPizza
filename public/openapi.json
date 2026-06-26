@@ -274,6 +274,257 @@
                 }
             }
         },
+        "/v1/employees": {
+            "get": {
+                "tags": ["Employee Workflow"],
+                "summary": "List employees across stores with advanced filtering",
+                "description": "Store-agnostic listing. Pass `storeIds[]` to restrict to one or more stores; omit to return employees across all stores. All filters from the store-scoped endpoint are supported. `q` matches names and SSN values (full or last 4).",
+                "parameters": [
+                    {
+                        "name": "storeIds[]",
+                        "in": "query",
+                        "description": "Filter by one or more store numbers (e.g. NY001). Omit to return employees across all stores.",
+                        "schema": {
+                            "type": "array",
+                            "items": { "type": "string" }
+                        }
+                    },
+                    {
+                        "name": "q",
+                        "in": "query",
+                        "description": "Unified search. Matches first/middle/last names and SSN digits (full or partial, including last 4).",
+                        "schema": { "type": "string" }
+                    },
+                    {
+                        "name": "employee_id",
+                        "in": "query",
+                        "schema": { "type": "integer" }
+                    },
+                    {
+                        "name": "gender",
+                        "in": "query",
+                        "schema": { "$ref": "#/components/schemas/Gender" }
+                    },
+                    {
+                        "name": "employment_type",
+                        "in": "query",
+                        "schema": { "$ref": "#/components/schemas/EmploymentType" }
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "schema": { "$ref": "#/components/schemas/EmployeeStatus" }
+                    },
+                    {
+                        "name": "status_in[]",
+                        "in": "query",
+                        "schema": {
+                            "type": "array",
+                            "items": { "$ref": "#/components/schemas/EmployeeStatus" }
+                        }
+                    },
+                    {
+                        "name": "position_id",
+                        "in": "query",
+                        "schema": { "type": "integer" }
+                    },
+                    {
+                        "name": "position_ids[]",
+                        "in": "query",
+                        "schema": {
+                            "type": "array",
+                            "items": { "type": "integer" }
+                        }
+                    },
+                    {
+                        "name": "marital_id",
+                        "in": "query",
+                        "schema": { "type": "integer" }
+                    },
+                    {
+                        "name": "id_type_id",
+                        "in": "query",
+                        "schema": { "type": "integer" }
+                    },
+                    {
+                        "name": "attachment_type_id",
+                        "in": "query",
+                        "schema": { "type": "integer" }
+                    },
+                    {
+                        "name": "day_of_week",
+                        "in": "query",
+                        "schema": { "$ref": "#/components/schemas/DayOfWeek" }
+                    },
+                    {
+                        "name": "shift_type",
+                        "in": "query",
+                        "schema": { "$ref": "#/components/schemas/ShiftType" }
+                    },
+                    {
+                        "name": "base_pay_min",
+                        "in": "query",
+                        "schema": { "type": "number" }
+                    },
+                    {
+                        "name": "base_pay_max",
+                        "in": "query",
+                        "schema": { "type": "number" }
+                    },
+                    {
+                        "name": "performance_pay_min",
+                        "in": "query",
+                        "schema": { "type": "number" }
+                    },
+                    {
+                        "name": "performance_pay_max",
+                        "in": "query",
+                        "schema": { "type": "number" }
+                    },
+                    {
+                        "name": "effective_pay_from",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "effective_pay_to",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "birth_from",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "birth_to",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "race",
+                        "in": "query",
+                        "schema": { "$ref": "#/components/schemas/Race" }
+                    },
+                    {
+                        "name": "religion",
+                        "in": "query",
+                        "schema": { "$ref": "#/components/schemas/Religion" }
+                    },
+                    {
+                        "name": "account_type",
+                        "in": "query",
+                        "schema": { "$ref": "#/components/schemas/AccountType" }
+                    },
+                    {
+                        "name": "has_primary_email",
+                        "in": "query",
+                        "schema": { "type": "boolean" }
+                    },
+                    {
+                        "name": "has_primary_phone",
+                        "in": "query",
+                        "schema": { "type": "boolean" }
+                    },
+                    {
+                        "name": "is_active",
+                        "in": "query",
+                        "schema": { "type": "boolean" }
+                    },
+                    {
+                        "name": "created_from",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "created_to",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "updated_from",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "updated_to",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "sort_by",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": ["id", "first_name", "last_name", "created_at", "updated_at", "employment_type", "gender"]
+                        }
+                    },
+                    {
+                        "name": "sort_dir",
+                        "in": "query",
+                        "schema": { "type": "string", "enum": ["asc", "desc"] }
+                    },
+                    {
+                        "name": "per_page",
+                        "in": "query",
+                        "schema": { "type": "integer", "minimum": 1, "maximum": 100 }
+                    },
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "schema": { "type": "integer", "minimum": 1 }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Paginated employees",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/EmployeeIndexResponse" },
+                                "example": {
+                                    "current_page": 1,
+                                    "data": [
+                                        {
+                                            "id": 10,
+                                            "first_name": "John",
+                                            "middle_name": null,
+                                            "last_name": "Doe",
+                                            "gender": "male",
+                                            "employment_type": "W2",
+                                            "created_at": "2026-04-16T08:00:00.000000Z",
+                                            "updated_at": "2026-04-16T08:00:00.000000Z",
+                                            "status_histories": [],
+                                            "pay_histories": [],
+                                            "contacts": [],
+                                            "addresses": [],
+                                            "availability_days": [],
+                                            "financial_infos": [],
+                                            "ids": [],
+                                            "obsession": null,
+                                            "positions": [],
+                                            "stores": [],
+                                            "maritals": [],
+                                            "attachments": []
+                                        }
+                                    ],
+                                    "first_page_url": "http://localhost/api/v1/employees?page=1",
+                                    "from": 1,
+                                    "last_page": 1,
+                                    "last_page_url": "http://localhost/api/v1/employees?page=1",
+                                    "links": [],
+                                    "next_page_url": null,
+                                    "path": "http://localhost/api/v1/employees",
+                                    "per_page": 25,
+                                    "prev_page_url": null,
+                                    "to": 1,
+                                    "total": 1
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/stores/{storeNumber}/employees": {
             "get": {
                 "tags": ["Employee Workflow"],
@@ -659,6 +910,191 @@
                                 "schema": {
                                     "$ref": "#/components/schemas/EmployeeWorkflowEnvelope"
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/requests": {
+            "get": {
+                "tags": ["Workflow Requests"],
+                "summary": "List workflow requests across stores (hiring + separation + milestone gift)",
+                "description": "Store-agnostic unified feed. Pass `storeIds[]` to restrict to one or more stores; omit to return requests across all stores. Each item carries a `request_type` field and a matching typed object; the other two are always `null`. All filters from the store-scoped endpoint are supported.",
+                "parameters": [
+                    {
+                        "name": "storeIds[]",
+                        "in": "query",
+                        "description": "Filter by one or more store numbers (e.g. NY001). Omit to return requests across all stores.",
+                        "schema": {
+                            "type": "array",
+                            "items": { "type": "string" }
+                        }
+                    },
+                    {
+                        "name": "q",
+                        "in": "query",
+                        "description": "Free-text search. For separation: employee names and notes. For hiring: candidate fields and final notes.",
+                        "schema": { "type": "string" }
+                    },
+                    {
+                        "name": "request_type",
+                        "in": "query",
+                        "description": "Filter a single workflow type.",
+                        "schema": { "$ref": "#/components/schemas/RequestType" }
+                    },
+                    {
+                        "name": "request_types[]",
+                        "in": "query",
+                        "description": "Filter multiple workflow types.",
+                        "schema": {
+                            "type": "array",
+                            "items": { "$ref": "#/components/schemas/RequestType" }
+                        }
+                    },
+                    {
+                        "name": "workflow_status",
+                        "in": "query",
+                        "description": "Filter a single derived workflow status.",
+                        "schema": { "$ref": "#/components/schemas/WorkflowRequestStatus" }
+                    },
+                    {
+                        "name": "workflow_statuses[]",
+                        "in": "query",
+                        "description": "Filter multiple derived workflow statuses.",
+                        "schema": {
+                            "type": "array",
+                            "items": { "$ref": "#/components/schemas/WorkflowRequestStatus" }
+                        }
+                    },
+                    {
+                        "name": "decision",
+                        "in": "query",
+                        "description": "Filter latest decision value.",
+                        "schema": { "$ref": "#/components/schemas/RequestDecision" }
+                    },
+                    {
+                        "name": "decision_in[]",
+                        "in": "query",
+                        "description": "Filter by multiple latest decision values.",
+                        "schema": {
+                            "type": "array",
+                            "items": { "$ref": "#/components/schemas/RequestDecision" }
+                        }
+                    },
+                    {
+                        "name": "separation_type",
+                        "in": "query",
+                        "schema": { "$ref": "#/components/schemas/SeparationType" }
+                    },
+                    {
+                        "name": "shift_type",
+                        "in": "query",
+                        "schema": { "$ref": "#/components/schemas/ShiftType" }
+                    },
+                    {
+                        "name": "availability_type",
+                        "in": "query",
+                        "schema": { "$ref": "#/components/schemas/AvailabilityType" }
+                    },
+                    {
+                        "name": "milestone_gift_stage",
+                        "in": "query",
+                        "description": "Filter milestone gift requests by stage.",
+                        "schema": { "$ref": "#/components/schemas/MilestoneGiftStage" }
+                    },
+                    {
+                        "name": "milestone",
+                        "in": "query",
+                        "description": "Filter milestone gift requests by the gift milestone.",
+                        "schema": { "$ref": "#/components/schemas/MilestoneGiftMilestone" }
+                    },
+                    {
+                        "name": "employee_id",
+                        "in": "query",
+                        "description": "Matches separation request employee, hired employee in hiring decision entries, or milestone gift request employee.",
+                        "schema": { "type": "integer" }
+                    },
+                    {
+                        "name": "requested_by_user_id",
+                        "in": "query",
+                        "schema": { "type": "integer" }
+                    },
+                    {
+                        "name": "decision_by_user_id",
+                        "in": "query",
+                        "schema": { "type": "integer" }
+                    },
+                    {
+                        "name": "desired_start_from",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "desired_start_to",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "final_working_from",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "final_working_to",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "created_from",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "created_to",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "decided_from",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "decided_to",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "sort_by",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": ["requested_at", "id", "final_working_day", "desired_start_date", "latest_decided_at"]
+                        }
+                    },
+                    {
+                        "name": "sort_dir",
+                        "in": "query",
+                        "schema": { "type": "string", "enum": ["asc", "desc"] }
+                    },
+                    {
+                        "name": "per_page",
+                        "in": "query",
+                        "schema": { "type": "integer", "minimum": 1, "maximum": 100 }
+                    },
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "schema": { "type": "integer", "minimum": 1 }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Unified workflow request feed",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/WorkflowRequestIndexResponse" }
                             }
                         }
                     }

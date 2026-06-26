@@ -69,6 +69,12 @@ Route::prefix('v1')->middleware('auth.token.store')->group(function (): void {
     Route::delete('milestone-gift-questions/{question}/options/{option}', [MilestoneGiftQuestionController::class, 'destroyOption'])
         ->name('api.v1.milestone-gift-questions.options.destroy');
 
+    Route::get('employees', [EmployeeWorkflowController::class, 'indexGlobal'])
+        ->name('api.v1.employees.index');
+
+    Route::get('requests', [WorkflowRequestController::class, 'indexGlobal'])
+        ->name('api.v1.requests.index');
+
     Route::prefix('stores/{storeId}')
         ->where(['storeId' => '[A-Za-z0-9_-]+'])
         ->group(function (): void {

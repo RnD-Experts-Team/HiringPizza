@@ -10,6 +10,29 @@ use Illuminate\Pagination\LengthAwarePaginator as Paginator;
 
 class EmployeeQueryService
 {
+    public function indexGlobal(array $storeIds, array $filters): LengthAwarePaginator
+    {
+        $query = Employee::query();
+
+        if (!empty($storeIds)) {
+            $query->whereHas('stores', function (Builder $q) use ($storeIds) {
+                $q->whereIn('store_id', $storeIds);
+                $this->constrainToLatestEffective($q, 'employee_stores');
+            });
+        }
+
+        $this->applyFilters($query, $filters);
+        $this->applySorting($query, $filters);
+
+        $perPage = min((int) ($filters['per_page'] ?? 25), 100);
+
+        if ($this->queryContainsSsnSearch($filters)) {
+            return $this->paginateWithInMemoryQFilter($query, $filters, $perPage);
+        }
+
+        return $query->paginate($perPage)->withQueryString();
+    }
+
     public function index(Store $store, array $filters): LengthAwarePaginator
     {
         $query = Employee::query()

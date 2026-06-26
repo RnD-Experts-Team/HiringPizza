@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\EmployeeDestroyRequest;
+use App\Http\Requests\Api\V1\EmployeeGlobalIndexRequest;
 use App\Http\Requests\Api\V1\EmployeeIndexRequest;
 use App\Http\Requests\Api\V1\EmployeeSeparationStatusExportRequest;
 use App\Http\Requests\Api\V1\EmployeeStatusChangeRequest;
@@ -28,6 +29,25 @@ class EmployeeWorkflowController extends Controller
         private readonly EmployeeExportService $exportService,
         private readonly ExportHiringBernardTempService $exportHiringBernardTempService
     ) {
+    }
+
+    public function indexGlobal(EmployeeGlobalIndexRequest $request): JsonResponse
+    {
+        $filters = $request->validated();
+
+        $storeIds = collect($filters['storeIds'] ?? [])
+            ->map(fn(string $num) => $this->workflowService->resolveStoreByNumber($num)->id)
+            ->all();
+
+        $employees = $this->queryService->indexGlobal($storeIds, $filters);
+
+        if ($employees instanceof LengthAwarePaginator) {
+            $employees->setCollection(
+                $employees->getCollection()->map(fn(Employee $employee) => $this->exposeSensitiveAttributes($employee))
+            );
+        }
+
+        return response()->json($employees);
     }
 
     public function index(EmployeeIndexRequest $request, string $storeNumber): JsonResponse
