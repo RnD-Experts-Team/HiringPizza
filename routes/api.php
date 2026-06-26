@@ -6,6 +6,8 @@ use App\Http\Controllers\Api\V1\ReferenceCatalogController;
 use App\Http\Controllers\Api\V1\SeparationRequestController;
 use App\Http\Controllers\Api\V1\HiringRequestController;
 use App\Http\Controllers\Api\V1\ManagerDashboardController;
+use App\Http\Controllers\Api\V1\MilestoneGiftQuestionController;
+use App\Http\Controllers\Api\V1\MilestoneGiftRequestController;
 use App\Http\Controllers\Api\V1\WorkflowRequestController;
 use Illuminate\Support\Facades\Route;
 
@@ -44,6 +46,28 @@ Route::prefix('v1')->middleware('auth.token.store')->group(function (): void {
     Route::get('reports/{store}/{date}', [ManagerDashboardController::class, 'reports'])
         ->where(['date' => '[0-9]{4}-[0-9]{2}-[0-9]{2}'])
         ->name('api.v1.reports.show');
+
+    // Global milestone gift question management (no store prefix)
+    Route::get('milestone-gift-questions', [MilestoneGiftQuestionController::class, 'indexAll'])
+        ->name('api.v1.milestone-gift-questions.index');
+
+    Route::post('milestone-gift-questions', [MilestoneGiftQuestionController::class, 'store'])
+        ->name('api.v1.milestone-gift-questions.store');
+
+    Route::put('milestone-gift-questions/{question}', [MilestoneGiftQuestionController::class, 'update'])
+        ->name('api.v1.milestone-gift-questions.update');
+
+    Route::delete('milestone-gift-questions/{question}', [MilestoneGiftQuestionController::class, 'destroy'])
+        ->name('api.v1.milestone-gift-questions.destroy');
+
+    Route::post('milestone-gift-questions/{question}/options', [MilestoneGiftQuestionController::class, 'storeOption'])
+        ->name('api.v1.milestone-gift-questions.options.store');
+
+    Route::put('milestone-gift-questions/{question}/options/{option}', [MilestoneGiftQuestionController::class, 'updateOption'])
+        ->name('api.v1.milestone-gift-questions.options.update');
+
+    Route::delete('milestone-gift-questions/{question}/options/{option}', [MilestoneGiftQuestionController::class, 'destroyOption'])
+        ->name('api.v1.milestone-gift-questions.options.destroy');
 
     Route::prefix('stores/{storeId}')
         ->where(['storeId' => '[A-Za-z0-9_-]+'])
@@ -85,5 +109,22 @@ Route::prefix('v1')->middleware('auth.token.store')->group(function (): void {
 
             Route::post('hiring-requests/{hiringRequest}/decision', [HiringRequestController::class, 'decide'])
                 ->name('api.v1.stores.hiring-requests.decide');
+
+            // Milestone Gift Request Workflow
+            Route::post('milestone-gift-requests', [MilestoneGiftRequestController::class, 'store'])
+                ->name('api.v1.stores.milestone-gift-requests.store');
+
+            Route::post('milestone-gift-requests/{milestoneGiftRequest}/rating', [MilestoneGiftRequestController::class, 'submitRating'])
+                ->name('api.v1.stores.milestone-gift-requests.rating');
+
+            Route::post('milestone-gift-requests/{milestoneGiftRequest}/gift-decision', [MilestoneGiftRequestController::class, 'recordDecision'])
+                ->name('api.v1.stores.milestone-gift-requests.gift-decision');
+
+            Route::post('milestone-gift-requests/{milestoneGiftRequest}/final-status', [MilestoneGiftRequestController::class, 'setFinalStatus'])
+                ->name('api.v1.stores.milestone-gift-requests.final-status');
+
+            // Milestone Gift Questions — store-scoped listing only (management is global, see above)
+            Route::get('milestone-gift-questions', [MilestoneGiftQuestionController::class, 'index'])
+                ->name('api.v1.stores.milestone-gift-questions.index');
         });
 });
