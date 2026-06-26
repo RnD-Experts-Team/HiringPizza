@@ -106,6 +106,7 @@ class WorkflowRequestQueryService
                 'positions',
                 'decisions.user',
                 'decisions.employees.employee',
+                'store'
             ])
             ->where('store_id', $store->id);
 
@@ -148,6 +149,7 @@ class WorkflowRequestQueryService
                 'rating.answers.selectedOptions.questionOption',
                 'decision',
                 'finalStatus',
+                'store'
             ])
             ->where('store_id', $store->id);
 
@@ -178,7 +180,7 @@ class WorkflowRequestQueryService
     private function fetchSeparationRowsGlobal(array $storeIds, array $filters): Collection
     {
         $query = SeparationRequest::query()
-            ->with(['user', 'employee', 'attachments', 'decisions.user'])
+            ->with(['user', 'employee', 'attachments', 'decisions.user', 'store'])
             ->when(!empty($storeIds), fn(Builder $q) => $q->whereIn('store_id', $storeIds));
 
         $query
