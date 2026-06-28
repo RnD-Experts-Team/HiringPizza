@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Enums\EmployeeStatus;
 use App\Models\Employee;
 use App\Models\Store;
 use Illuminate\Support\Collection;
@@ -27,8 +26,8 @@ class ExportHiringBernardTempService
 
             $query = Employee::query()
                 ->with([
-                    'statusHistories' => fn($q) => $q->orderByDesc('effective_date')->orderByDesc('id'),
-                    'payHistories' => fn($q) => $q->orderByDesc('effective_date')->orderByDesc('id'),
+                    'statusHistories' => fn ($q) => $q->orderByDesc('effective_date')->orderByDesc('id'),
+                    'payHistories' => fn ($q) => $q->orderByDesc('effective_date')->orderByDesc('id'),
                     'contacts',
                     'addresses',
                     'availabilityDays',
@@ -131,13 +130,13 @@ class ExportHiringBernardTempService
             $this->enumValue($employee->employment_type),
 
             $this->getStatusValue($latestStatusHistory),
-            $this->formatDate($latestStatusHistory?->effective_date),
+            $this->getStatusBasedEffectiveDate($employee, $latestStatusHistory),
 
             $this->getStoreNumber($latestStore),
             $this->getPositionLabel($latestPosition),
             $this->getMaritalStatusLabel($latestMarital),
 
-            $this->getLatestHiredDate($employee),
+            $this->getOldestHiredDate($employee),
             $this->getBirthdate($employee),
 
             $this->safeAttribute($latestPayHistory, 'base_pay'),
@@ -155,6 +154,7 @@ class ExportHiringBernardTempService
             $this->safeAttribute($primaryAddress, 'state'),
             $this->safeAttribute($primaryAddress, 'zip_code'),
             $this->safeAttribute($primaryAddress, 'country'),
+
             $this->formatFinancialInfo($latestFinancialInfo),
             $this->formatAvailabilityDays($employee->availabilityDays),
 
@@ -174,6 +174,83 @@ class ExportHiringBernardTempService
             ->first();
     }
 
+    private function getStatusBasedEffectiveDate(Employee $employee, mixed $latestStatusHistory): string
+    {
+        if (!$latestStatusHistory) {
+            return '';
+        }
+
+        $latestStatus = $this->normalizeStatus(
+            $this->safeAttribute($latestStatusHistory, 'status')
+        );
+
+        if ($this->isActiveHiringStatus($latestStatus)) {
+            return $this->getOldestHiredDate($employee);
+        }
+
+        if ($this->isInactiveStatus($latestStatus)) {
+            return $this->formatDate(
+                $this->safeAttribute($latestStatusHistory, 'effective_date')
+            );
+        }
+
+        return $this->formatDate(
+            $this->safeAttribute($latestStatusHistory, 'effective_date')
+        );
+    }
+
+    private function getOldestHiredDate(Employee $employee): string
+    {
+        $oldestHiredHistory = $employee->statusHistories
+            ->filter(function ($statusHistory): bool {
+                return $this->isActiveHiringStatus(
+                    $this->normalizeStatus(
+                        $this->safeAttribute($statusHistory, 'status')
+                    )
+                );
+            })
+            ->sort(function ($a, $b): int {
+                $dateComparison = $this->effectiveDateSortValue($a) <=> $this->effectiveDateSortValue($b);
+
+                if ($dateComparison !== 0) {
+                    return $dateComparison;
+                }
+
+                return ((int) ($this->safeAttribute($a, 'id') ?? 0))
+                    <=> ((int) ($this->safeAttribute($b, 'id') ?? 0));
+            })
+            ->first();
+
+        if (!$oldestHiredHistory) {
+            return '';
+        }
+
+        return $this->formatDate(
+            $this->safeAttribute($oldestHiredHistory, 'effective_date')
+        );
+    }
+
+    private function isActiveHiringStatus(?string $status): bool
+    {
+        return in_array($status, ['hired', 'rehired', 'oje'], true);
+    }
+
+    private function isInactiveStatus(?string $status): bool
+    {
+        return in_array($status, ['terminated', 'resigned'], true);
+    }
+
+    private function normalizeStatus(mixed $status): ?string
+    {
+        $status = $this->enumValue($status);
+
+        if ($status === null || $status === '') {
+            return null;
+        }
+
+        return strtolower(trim((string) $status));
+    }
+
     private function latestByEffectiveDate(Collection $items): mixed
     {
         if ($items->isEmpty()) {
@@ -181,12 +258,42 @@ class ExportHiringBernardTempService
         }
 
         return $items
-            ->sortByDesc(function ($item) {
-                return $this->safeAttribute($item, 'effective_date')
-                    ?? $this->safeAttribute($item, 'created_at')
-                    ?? $this->safeAttribute($item, 'id');
+            ->sort(function ($a, $b): int {
+                $dateComparison = $this->effectiveDateSortValue($b) <=> $this->effectiveDateSortValue($a);
+
+                if ($dateComparison !== 0) {
+                    return $dateComparison;
+                }
+
+                return ((int) ($this->safeAttribute($b, 'id') ?? 0))
+                    <=> ((int) ($this->safeAttribute($a, 'id') ?? 0));
             })
             ->first();
+    }
+
+    private function effectiveDateSortValue(mixed $item): int
+    {
+        $effectiveDate = $this->safeAttribute($item, 'effective_date');
+
+        if ($effectiveDate instanceof \Carbon\CarbonInterface) {
+            return $effectiveDate->timestamp;
+        }
+
+        if ($effectiveDate) {
+            return strtotime((string) $effectiveDate) ?: 0;
+        }
+
+        $createdAt = $this->safeAttribute($item, 'created_at');
+
+        if ($createdAt instanceof \Carbon\CarbonInterface) {
+            return $createdAt->timestamp;
+        }
+
+        if ($createdAt) {
+            return strtotime((string) $createdAt) ?: 0;
+        }
+
+        return (int) ($this->safeAttribute($item, 'id') ?? 0);
     }
 
     private function primaryOrFirst(Collection $items): mixed
@@ -231,7 +338,9 @@ class ExportHiringBernardTempService
             return '';
         }
 
-        return (string) $this->enumValue($this->safeAttribute($statusHistory, 'status'));
+        return (string) $this->enumValue(
+            $this->safeAttribute($statusHistory, 'status')
+        );
     }
 
     private function getStoreNumber(mixed $employeeStore): string
@@ -277,37 +386,15 @@ class ExportHiringBernardTempService
         );
     }
 
-    private function getLatestHiredDate(Employee $employee): string
-    {
-        $hiredStatuses = [
-            EmployeeStatus::Hired,
-            EmployeeStatus::Rehired,
-            EmployeeStatus::OJE,
-        ];
-
-        $hiredHistory = $employee->statusHistories()
-            ->whereIn('status', array_map(
-                fn ($status) => $status instanceof \BackedEnum ? $status->value : $status,
-                $hiredStatuses
-            ))
-            ->orderByDesc('effective_date')
-            ->orderByDesc('id')
-            ->first();
-
-        if (!$hiredHistory) {
-            return '';
-        }
-
-        return $this->formatDate($this->safeAttribute($hiredHistory, 'effective_date'));
-    }
-
     private function getBirthdate(Employee $employee): string
     {
         if (!$employee->obsession) {
             return '';
         }
 
-        return $this->formatDate($this->safeAttribute($employee->obsession, 'birth_date'));
+        return $this->formatDate(
+            $this->safeAttribute($employee->obsession, 'birth_date')
+        );
     }
 
     private function formatFinancialInfo(mixed $financialInfo): string
@@ -332,7 +419,7 @@ class ExportHiringBernardTempService
 
         return collect($parts)
             ->filter()
-            ->map(fn($value, $key): string => "{$key}: {$this->csvValue($value)}")
+            ->map(fn ($value, $key): string => "{$key}: {$this->csvValue($value)}")
             ->implode('; ');
     }
 
@@ -415,9 +502,9 @@ class ExportHiringBernardTempService
                     ?? $this->safeAttribute($attachment, 'mime_type');
             })
             ->filter()
-            ->map(fn($value): mixed => $this->enumValue($value))
+            ->map(fn ($value): mixed => $this->enumValue($value))
             ->unique()
-            ->map(fn($value): string => (string) $this->csvValue($value))
+            ->map(fn ($value): string => (string) $this->csvValue($value))
             ->implode('; ');
     }
 
@@ -464,7 +551,7 @@ class ExportHiringBernardTempService
 
     private function csvRow(array $row): array
     {
-        return array_map(fn($value): mixed => $this->csvValue($value), $row);
+        return array_map(fn ($value): mixed => $this->csvValue($value), $row);
     }
 
     private function csvValue(mixed $value): mixed
