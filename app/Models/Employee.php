@@ -80,6 +80,14 @@ class Employee extends Model
         return $this->hasMany(EmployeeStore::class);
     }
 
+    public function latestStore(): HasOne
+    {
+        return $this->hasOne(EmployeeStore::class)->ofMany([
+            'effective_date' => 'max',
+            'id' => 'max',
+        ]);
+    }
+
     public function maritals(): HasMany
     {
         return $this->hasMany(EmployeeMarital::class, 'emp_id');

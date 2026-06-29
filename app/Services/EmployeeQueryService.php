@@ -12,7 +12,7 @@ class EmployeeQueryService
 {
     public function indexGlobal(array $storeIds, array $filters): LengthAwarePaginator
     {
-        $query = Employee::query();
+        $query = Employee::query()->with('latestStore.store');
 
         if (!empty($storeIds)) {
             $query->whereHas('stores', function (Builder $q) use ($storeIds) {
