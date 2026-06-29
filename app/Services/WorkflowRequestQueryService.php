@@ -222,6 +222,7 @@ class WorkflowRequestQueryService
                 'positions',
                 'decisions.user',
                 'decisions.employees.employee',
+                'store'
             ])
             ->when(!empty($storeIds), fn(Builder $q) => $q->whereIn('store_id', $storeIds));
 
