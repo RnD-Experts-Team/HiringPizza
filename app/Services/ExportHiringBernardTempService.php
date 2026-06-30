@@ -12,8 +12,10 @@ class ExportHiringBernardTempService
     /**
      * Export employees to CSV format.
      *
-     * If $store is provided, export only employees assigned to that store.
-     * If $store is null, export all employees.
+     * Important:
+     * If $store is provided, we do not filter by historical employee_stores directly.
+     * We first calculate the employee's export store, then include the employee only
+     * if their current/export store matches the requested store.
      */
     public function export(?Store $store = null): StreamedResponse
     {
@@ -39,15 +41,15 @@ class ExportHiringBernardTempService
                     'attachments',
                     'obsession',
                 ])
-                ->when($store, function ($query) use ($store): void {
-                    $query->whereHas('stores', function ($storeQuery) use ($store): void {
-                        $storeQuery->where('store_id', $store->id);
-                    });
-                })
                 ->orderBy('id');
 
             foreach ($query->cursor() as $employee) {
                 /** @var Employee $employee */
+
+                if ($store && !$this->employeeBelongsToExportStore($employee, $store)) {
+                    continue;
+                }
+
                 fputcsv($handle, $this->buildRow($employee));
             }
 
@@ -132,7 +134,7 @@ class ExportHiringBernardTempService
             $this->getStatusValue($latestStatusHistory),
             $this->getStatusBasedEffectiveDate($employee, $latestStatusHistory),
 
-            $this->getStoreNumber($latestStore),
+            $this->getStoreNumberForExport($employee, $latestStatusHistory, $latestStore),
             $this->getPositionLabel($latestPosition),
             $this->getMaritalStatusLabel($latestMarital),
 
@@ -164,6 +166,20 @@ class ExportHiringBernardTempService
             $this->formatAttachmentNames($employee->attachments),
             $this->formatAttachmentTypes($employee->attachments),
         ]);
+    }
+
+    private function employeeBelongsToExportStore(Employee $employee, Store $store): bool
+    {
+        $latestStatusHistory = $this->getLatestStatusHistory($employee);
+        $latestStore = $this->latestByEffectiveDate($employee->stores);
+
+        $exportStoreNumber = $this->getStoreNumberForExport(
+            $employee,
+            $latestStatusHistory,
+            $latestStore
+        );
+
+        return (string) $exportStoreNumber === (string) $store->store_number;
     }
 
     private function getLatestStatusHistory(Employee $employee): mixed
@@ -343,6 +359,58 @@ class ExportHiringBernardTempService
         );
     }
 
+    private function getStoreNumberForExport(
+        Employee $employee,
+        mixed $latestStatusHistory,
+        mixed $latestStore
+    ): string {
+        $latestStatus = $this->normalizeStatus(
+            $this->safeAttribute($latestStatusHistory, 'status')
+        );
+
+        $statusStoreId = $this->safeAttribute($latestStatusHistory, 'store_id');
+
+        /*
+         * If the employee's latest status is hired, rehired, or OJE,
+         * the exported store should be the store tied to that latest status event.
+         *
+         * Example:
+         * - Employee was hired at Store A
+         * - Employee was later rehired at Store B
+         * Export should show Store B.
+         */
+        if ($this->isActiveHiringStatus($latestStatus) && $statusStoreId) {
+            $matchingStoreAssignment = $employee->stores
+                ->filter(function ($employeeStore) use ($statusStoreId): bool {
+                    return (string) $this->safeAttribute($employeeStore, 'store_id')
+                        === (string) $statusStoreId;
+                })
+                ->sort(function ($a, $b): int {
+                    $dateComparison = $this->effectiveDateSortValue($b) <=> $this->effectiveDateSortValue($a);
+
+                    if ($dateComparison !== 0) {
+                        return $dateComparison;
+                    }
+
+                    return ((int) ($this->safeAttribute($b, 'id') ?? 0))
+                        <=> ((int) ($this->safeAttribute($a, 'id') ?? 0));
+                })
+                ->first();
+
+            if ($matchingStoreAssignment) {
+                return $this->getStoreNumber($matchingStoreAssignment);
+            }
+
+            $store = Store::query()->find($statusStoreId);
+
+            if ($store) {
+                return (string) $store->store_number;
+            }
+        }
+
+        return $this->getStoreNumber($latestStore);
+    }
+
     private function getStoreNumber(mixed $employeeStore): string
     {
         if (!$employeeStore) {
@@ -408,7 +476,6 @@ class ExportHiringBernardTempService
          * If the current APP_KEY does not match the key used to encrypt the data,
          * Laravel throws: "The MAC is invalid."
          */
-
         $parts = [
             'payment_method' => $this->enumValue($this->safeAttribute($financialInfo, 'payment_method')),
             'bank_name' => $this->safeAttribute($financialInfo, 'bank_name'),
