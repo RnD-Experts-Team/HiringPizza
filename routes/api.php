@@ -42,6 +42,10 @@ Route::prefix('v1')->middleware('auth.token.store')->group(function (): void {
     Route::put('reference-catalog', [ReferenceCatalogController::class, 'sync'])
         ->name('api.v1.reference-catalog.sync');
 
+    // Multi-store date-range report: stores[] query param (or stores[]=all), start_date, end_date.
+    Route::get('reports', [ManagerDashboardController::class, 'reportsMultiStore'])
+        ->name('api.v1.reports.multi');
+
     // Combined manager-dashboard page report (one call instead of three).
     Route::get('reports/{store}/{date}', [ManagerDashboardController::class, 'reports'])
         ->where(['date' => '[0-9]{4}-[0-9]{2}-[0-9]{2}'])

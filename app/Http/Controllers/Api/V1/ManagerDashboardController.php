@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Services\EmployeeWorkflowService;
 use App\Services\ManagerDashboardService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 class ManagerDashboardController extends Controller
 {
     public function __construct(
@@ -29,6 +30,30 @@ class ManagerDashboardController extends Controller
     public function highHoursEmployees(string $store, string $date): JsonResponse
     {
         return response()->json($this->dashboardService->getHighHoursEmployees($store, $date));
+    }
+
+    /**
+     * Multi-store date-range report. Accepts stores[] (array of store numbers,
+     * or stores[]=all) plus start_date and end_date as query parameters.
+     * Returns the same four sections as reports() but for every requested store
+     * over the given date range, keyed by store number.
+     */
+    public function reportsMultiStore(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'stores'     => ['required', 'array', 'min:1'],
+            'stores.*'   => ['required', 'string'],
+            'start_date' => ['required', 'date_format:Y-m-d'],
+            'end_date'   => ['required', 'date_format:Y-m-d', 'after_or_equal:start_date'],
+        ]);
+
+        return response()->json(
+            $this->dashboardService->getMultiStoreReports(
+                $validated['stores'],
+                $validated['start_date'],
+                $validated['end_date'],
+            )
+        );
     }
 
     /**

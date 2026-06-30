@@ -2029,6 +2029,112 @@
                 }
             }
         },
+        "/v1/reports": {
+            "get": {
+                "tags": ["Manager Dashboard"],
+                "summary": "Multi-store date-range reports",
+                "description": "Returns the same four dashboard sections as the single-store reports endpoint (`manager-dashboard`, `high-hours-employees`, `average-hourly-pay`, `weekly-labor`) but for multiple stores over an explicit date range in a single call.\n\n**Store selection:** Pass `stores[]=101&stores[]=102` for specific stores, or `stores[]=all` to include every store.\n\n**Date range:** `start_date` and `end_date` are used directly as metric window boundaries (inclusive). Weekly-labor entries are bucketed into Tuesday–Monday business weeks within the range.\n\n**Full details:** The `average-hourly-pay` section returns one row per employee (pay, hours, tips, labor) rather than store-level aggregates. All other sections match the single-store equivalents.\n\nThe response is a plain object keyed by store number.",
+                "parameters": [
+                    {
+                        "name": "stores[]",
+                        "in": "query",
+                        "required": true,
+                        "description": "One or more store numbers, e.g. `stores[]=101&stores[]=102`. Pass `stores[]=all` to include every store.",
+                        "schema": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": { "type": "string" }
+                        }
+                    },
+                    {
+                        "name": "start_date",
+                        "in": "query",
+                        "required": true,
+                        "description": "Range start date (YYYY-MM-DD, inclusive).",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "end_date",
+                        "in": "query",
+                        "required": true,
+                        "description": "Range end date (YYYY-MM-DD, inclusive). Must be on or after start_date.",
+                        "schema": { "type": "string", "format": "date" }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Report data keyed by store number",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/MultiStoreReportsResponse" },
+                                "example": {
+                                    "101": {
+                                        "manager-dashboard": {
+                                            "store_id": "101",
+                                            "start_date": "2026-06-01",
+                                            "end_date": "2026-06-07",
+                                            "employees": [
+                                                {
+                                                    "employee_id": 42,
+                                                    "name": { "first": "Jane", "middle": null, "last": "Doe" },
+                                                    "status": "active",
+                                                    "birthday": { "is_upcoming": false },
+                                                    "position": "Shift Lead",
+                                                    "base_pay": "16.50",
+                                                    "performance_pay": "2.00",
+                                                    "metrics": [
+                                                        { "metric_date": "2026-06-03", "label": "Hours", "value": "38.5", "value_numeric": 38.5 }
+                                                    ]
+                                                }
+                                            ]
+                                        },
+                                        "high-hours-employees": {
+                                            "store": "101",
+                                            "start_date": "2026-06-01",
+                                            "end_date": "2026-06-07",
+                                            "employees": [
+                                                {
+                                                    "employee_id": 55,
+                                                    "first_name": "Carlos",
+                                                    "last_name": "Rivera",
+                                                    "position": "Cook",
+                                                    "total_hours": 62.5,
+                                                    "hourly_pay": 15.0,
+                                                    "gross_pay": 937.5
+                                                }
+                                            ]
+                                        },
+                                        "average-hourly-pay": {
+                                            "store": "101",
+                                            "start_date": "2026-06-01",
+                                            "end_date": "2026-06-07",
+                                            "employees": [
+                                                {
+                                                    "employee_id": 42,
+                                                    "first_name": "Jane",
+                                                    "last_name": "Doe",
+                                                    "hourly_pay": 16.50,
+                                                    "total_hours": 38.5,
+                                                    "tips": 120.0,
+                                                    "labor": 28.5
+                                                }
+                                            ]
+                                        },
+                                        "weekly-labor": {
+                                            "store": "101",
+                                            "entries": [
+                                                { "week_start": "2026-06-02", "week_end": "2026-06-08", "labor": 28.5 }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "422": { "description": "Validation error — missing or invalid parameters" }
+                }
+            }
+        },
         "/v1/stores/{storeNumber}/milestone-gift-requests/{milestoneGiftRequestId}/final-status": {
             "post": {
                 "tags": ["Milestone Gift Request Workflow"],
@@ -3642,6 +3748,119 @@
                     "created_at": { "type": "string", "format": "date-time" },
                     "updated_at": { "type": "string", "format": "date-time" }
                 }
+            },
+            "MultiStoreReportDashboardEmployee": {
+                "type": "object",
+                "properties": {
+                    "employee_id":      { "type": "integer" },
+                    "name": {
+                        "type": "object",
+                        "properties": {
+                            "first":  { "type": "string" },
+                            "middle": { "type": ["string", "null"] },
+                            "last":   { "type": "string" }
+                        }
+                    },
+                    "status":           { "type": "string", "enum": ["active", "inactive"] },
+                    "birthday":         { "$ref": "#/components/schemas/ManagerDashboardBirthday" },
+                    "position":         { "type": ["string", "null"] },
+                    "base_pay":         { "type": ["string", "null"] },
+                    "performance_pay":  { "type": ["string", "null"] },
+                    "metrics": {
+                        "type": "array",
+                        "description": "All metric rows within the requested date range (columns 2, 3, 10, 31).",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "metric_date":    { "type": "string", "format": "date" },
+                                "label":          { "type": "string" },
+                                "value":          { "type": ["string", "null"] },
+                                "value_numeric":  { "type": ["number", "null"] }
+                            }
+                        }
+                    }
+                }
+            },
+            "MultiStoreReportDashboard": {
+                "type": "object",
+                "properties": {
+                    "store_id":   { "type": "string" },
+                    "start_date": { "type": "string", "format": "date" },
+                    "end_date":   { "type": "string", "format": "date" },
+                    "employees":  { "type": "array", "items": { "$ref": "#/components/schemas/MultiStoreReportDashboardEmployee" } }
+                }
+            },
+            "MultiStoreReportHighHoursEmployee": {
+                "type": "object",
+                "properties": {
+                    "employee_id": { "type": "integer" },
+                    "first_name":  { "type": "string" },
+                    "last_name":   { "type": "string" },
+                    "position":    { "type": ["string", "null"] },
+                    "total_hours": { "type": ["number", "null"], "description": "Column id 3 — total hours for the period." },
+                    "hourly_pay":  { "type": ["number", "null"], "description": "Column id 2 — hourly pay rate." },
+                    "gross_pay":   { "type": ["number", "null"], "description": "Column id 10 — gross pay." }
+                }
+            },
+            "MultiStoreReportHighHours": {
+                "type": "object",
+                "properties": {
+                    "store":      { "type": "string" },
+                    "start_date": { "type": "string", "format": "date" },
+                    "end_date":   { "type": "string", "format": "date" },
+                    "employees":  { "type": "array", "description": "Employees with ≥ 60 total hours (column id 3) in the period.", "items": { "$ref": "#/components/schemas/MultiStoreReportHighHoursEmployee" } }
+                }
+            },
+            "MultiStoreReportPayEmployee": {
+                "type": "object",
+                "description": "Per-employee pay detail for the requested date range. Each field reflects the MAX value recorded across all metric rows for that employee in the period.",
+                "properties": {
+                    "employee_id": { "type": "integer" },
+                    "first_name":  { "type": "string" },
+                    "last_name":   { "type": "string" },
+                    "hourly_pay":  { "type": ["number", "null"], "description": "Column id 2 — hourly pay rate." },
+                    "total_hours": { "type": ["number", "null"], "description": "Column id 3 — total hours." },
+                    "tips":        { "type": ["number", "null"], "description": "Column id 4 — tips." },
+                    "labor":       { "type": ["number", "null"], "description": "Column id 23 — labor percentage (multiplied by 100)." }
+                }
+            },
+            "MultiStoreReportAvgPay": {
+                "type": "object",
+                "properties": {
+                    "store":      { "type": "string" },
+                    "start_date": { "type": "string", "format": "date" },
+                    "end_date":   { "type": "string", "format": "date" },
+                    "employees":  { "type": "array", "description": "One row per employee — full detail, not aggregated.", "items": { "$ref": "#/components/schemas/MultiStoreReportPayEmployee" } }
+                }
+            },
+            "MultiStoreReportWeeklyLaborEntry": {
+                "type": "object",
+                "properties": {
+                    "week_start": { "type": "string", "format": "date", "description": "Tuesday that starts the bucket." },
+                    "week_end":   { "type": "string", "format": "date", "description": "Monday that ends the bucket." },
+                    "labor":      { "type": ["number", "null"], "description": "Average labor % × 100 for this week. Null if no data." }
+                }
+            },
+            "MultiStoreReportWeeklyLabor": {
+                "type": "object",
+                "properties": {
+                    "store":   { "type": "string" },
+                    "entries": { "type": "array", "description": "One entry per Tuesday–Monday week that overlaps the requested date range.", "items": { "$ref": "#/components/schemas/MultiStoreReportWeeklyLaborEntry" } }
+                }
+            },
+            "MultiStoreReportEntry": {
+                "type": "object",
+                "properties": {
+                    "manager-dashboard":    { "$ref": "#/components/schemas/MultiStoreReportDashboard" },
+                    "high-hours-employees": { "$ref": "#/components/schemas/MultiStoreReportHighHours" },
+                    "average-hourly-pay":   { "$ref": "#/components/schemas/MultiStoreReportAvgPay" },
+                    "weekly-labor":         { "$ref": "#/components/schemas/MultiStoreReportWeeklyLabor" }
+                }
+            },
+            "MultiStoreReportsResponse": {
+                "type": "object",
+                "description": "Object keyed by store number. Each value is a MultiStoreReportEntry.",
+                "additionalProperties": { "$ref": "#/components/schemas/MultiStoreReportEntry" }
             },
             "MilestoneGiftRequestEntity": {
                 "type": "object",
