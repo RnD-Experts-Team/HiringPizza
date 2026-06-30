@@ -265,6 +265,7 @@ class WorkflowRequestQueryService
                 'rating.answers.selectedOptions.questionOption',
                 'decision',
                 'finalStatus',
+                'store'
             ])
             ->when(!empty($storeIds), fn(Builder $q) => $q->whereIn('store_id', $storeIds));
 
