@@ -149,6 +149,64 @@ class ManagerDashboardService
         ];
     }
 
+    public function getWeeklyLabor(string $store, string $date): array
+    {
+        $day = CarbonImmutable::parse($date)->startOfDay();
+
+        // Build 6 week ranges: current week and 5 preceding, oldest first
+        $weeks = [];
+        for ($i = 5; $i >= 0; $i--) {
+            [$start, $end] = $this->isoBusinessWeek($day->subWeeks($i));
+            $weeks[] = ['week_start' => $start->toDateString(), 'week_end' => $end->toDateString()];
+        }
+
+        $overallStart = $weeks[0]['week_start'];
+        $overallEnd   = $weeks[5]['week_end'];
+
+        $latestEmployeeStores = EmployeeStore::query()
+            ->select('employee_id', DB::raw('MAX(effective_date) as effective_date'))
+            ->whereDate('effective_date', '<=', $overallEnd)
+            ->groupBy('employee_id');
+
+        // One query over all 6 weeks; DATEDIFF from the oldest Tuesday buckets each
+        // row into its week index (0 = oldest, 5 = current) since each week is exactly 7 days.
+        $rows = EmployeeMetric::query()
+            ->from('employee_metrics as em')
+            ->join('employee_metric_values as emv', 'emv.employee_metric_id', '=', 'em.id')
+            ->joinSub($latestEmployeeStores, 'latest_es', function ($join) {
+                $join->on('latest_es.employee_id', '=', 'em.employee_id');
+            })
+            ->join('employee_stores as es', function ($join) {
+                $join->on('es.employee_id', '=', 'latest_es.employee_id')
+                    ->on('es.effective_date', '=', 'latest_es.effective_date');
+            })
+            ->join('stores as s', 's.id', '=', 'es.store_id')
+            ->where('s.store_number', $store)
+            ->whereBetween('em.metric_date', [$overallStart, $overallEnd])
+            ->where('emv.column_id', 23)
+            ->selectRaw('FLOOR(DATEDIFF(em.metric_date, ?) / 7) AS week_index', [$overallStart])
+            ->selectRaw('AVG(emv.value_numeric) AS labor')
+            ->groupByRaw('FLOOR(DATEDIFF(em.metric_date, ?) / 7)', [$overallStart])
+            ->get()
+            ->keyBy('week_index');
+
+        $entries = [];
+        foreach ($weeks as $index => $week) {
+            $entries[] = [
+                'week_start' => $week['week_start'],
+                'week_end'   => $week['week_end'],
+                'labor'      => isset($rows[$index]) && $rows[$index]->labor !== null
+                    ? round((float) $rows[$index]->labor * 100, 2)
+                    : null,
+            ];
+        }
+
+        return [
+            'store'   => $store,
+            'entries' => $entries,
+        ];
+    }
+
     public function getDashboard(Store $store, string $date): array
     {
         $day = CarbonImmutable::parse($date)->startOfDay();

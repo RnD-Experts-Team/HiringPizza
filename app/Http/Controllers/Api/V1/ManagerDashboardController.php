@@ -44,6 +44,7 @@ class ManagerDashboardController extends Controller
             'manager-dashboard'    => $this->dashboardService->getDashboard($storeModel, $date),
             'high-hours-employees' => $this->dashboardService->getHighHoursEmployees($store, $date),
             'average-hourly-pay'   => $this->dashboardService->getAverageHourlyPay($store, $date),
+            'weekly-labor'         => $this->dashboardService->getWeeklyLabor($store, $date),
         ]);
     }
 }
