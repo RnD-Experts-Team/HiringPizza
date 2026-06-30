@@ -187,7 +187,7 @@ class ManagerDashboardService
             ->select([])
             ->selectRaw('FLOOR(DATEDIFF(em.metric_date, ?) / 7) AS week_index', [$overallStart])
             ->selectRaw('AVG(emv.value_numeric) AS labor')
-            ->groupByRaw('FLOOR(DATEDIFF(em.metric_date, ?) / 7)', [$overallStart])
+            ->groupByRaw('week_index')
             ->get()
             ->keyBy('week_index');
 
