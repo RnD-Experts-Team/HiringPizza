@@ -184,6 +184,7 @@ class ManagerDashboardService
             ->where('s.store_number', $store)
             ->whereBetween('em.metric_date', [$overallStart, $overallEnd])
             ->where('emv.column_id', 23)
+            ->select([])
             ->selectRaw('FLOOR(DATEDIFF(em.metric_date, ?) / 7) AS week_index', [$overallStart])
             ->selectRaw('AVG(emv.value_numeric) AS labor')
             ->groupByRaw('FLOOR(DATEDIFF(em.metric_date, ?) / 7)', [$overallStart])
