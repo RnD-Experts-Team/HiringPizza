@@ -42,6 +42,10 @@ Route::prefix('v1')->middleware('auth.token.store')->group(function (): void {
     Route::put('reference-catalog', [ReferenceCatalogController::class, 'sync'])
         ->name('api.v1.reference-catalog.sync');
 
+    // Multi-store date-range report: stores[] query param (or stores[]=all), start_date, end_date.
+    Route::get('reports', [ManagerDashboardController::class, 'reportsMultiStore'])
+        ->name('api.v1.reports.multi');
+
     // Combined manager-dashboard page report (one call instead of three).
     Route::get('reports/{store}/{date}', [ManagerDashboardController::class, 'reports'])
         ->where(['date' => '[0-9]{4}-[0-9]{2}-[0-9]{2}'])
@@ -68,6 +72,12 @@ Route::prefix('v1')->middleware('auth.token.store')->group(function (): void {
 
     Route::delete('milestone-gift-questions/{question}/options/{option}', [MilestoneGiftQuestionController::class, 'destroyOption'])
         ->name('api.v1.milestone-gift-questions.options.destroy');
+
+    Route::get('employees', [EmployeeWorkflowController::class, 'indexGlobal'])
+        ->name('api.v1.employees.index');
+
+    Route::get('requests', [WorkflowRequestController::class, 'indexGlobal'])
+        ->name('api.v1.requests.index');
 
     Route::prefix('stores/{storeId}')
         ->where(['storeId' => '[A-Za-z0-9_-]+'])

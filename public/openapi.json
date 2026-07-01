@@ -274,6 +274,257 @@
                 }
             }
         },
+        "/v1/employees": {
+            "get": {
+                "tags": ["Employee Workflow"],
+                "summary": "List employees across stores with advanced filtering",
+                "description": "Store-agnostic listing. Pass `storeIds[]` to restrict to one or more stores; omit to return employees across all stores. All filters from the store-scoped endpoint are supported. `q` matches names and SSN values (full or last 4).",
+                "parameters": [
+                    {
+                        "name": "storeIds[]",
+                        "in": "query",
+                        "description": "Filter by one or more store numbers (e.g. NY001). Omit to return employees across all stores.",
+                        "schema": {
+                            "type": "array",
+                            "items": { "type": "string" }
+                        }
+                    },
+                    {
+                        "name": "q",
+                        "in": "query",
+                        "description": "Unified search. Matches first/middle/last names and SSN digits (full or partial, including last 4).",
+                        "schema": { "type": "string" }
+                    },
+                    {
+                        "name": "employee_id",
+                        "in": "query",
+                        "schema": { "type": "integer" }
+                    },
+                    {
+                        "name": "gender",
+                        "in": "query",
+                        "schema": { "$ref": "#/components/schemas/Gender" }
+                    },
+                    {
+                        "name": "employment_type",
+                        "in": "query",
+                        "schema": { "$ref": "#/components/schemas/EmploymentType" }
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "schema": { "$ref": "#/components/schemas/EmployeeStatus" }
+                    },
+                    {
+                        "name": "status_in[]",
+                        "in": "query",
+                        "schema": {
+                            "type": "array",
+                            "items": { "$ref": "#/components/schemas/EmployeeStatus" }
+                        }
+                    },
+                    {
+                        "name": "position_id",
+                        "in": "query",
+                        "schema": { "type": "integer" }
+                    },
+                    {
+                        "name": "position_ids[]",
+                        "in": "query",
+                        "schema": {
+                            "type": "array",
+                            "items": { "type": "integer" }
+                        }
+                    },
+                    {
+                        "name": "marital_id",
+                        "in": "query",
+                        "schema": { "type": "integer" }
+                    },
+                    {
+                        "name": "id_type_id",
+                        "in": "query",
+                        "schema": { "type": "integer" }
+                    },
+                    {
+                        "name": "attachment_type_id",
+                        "in": "query",
+                        "schema": { "type": "integer" }
+                    },
+                    {
+                        "name": "day_of_week",
+                        "in": "query",
+                        "schema": { "$ref": "#/components/schemas/DayOfWeek" }
+                    },
+                    {
+                        "name": "shift_type",
+                        "in": "query",
+                        "schema": { "$ref": "#/components/schemas/ShiftType" }
+                    },
+                    {
+                        "name": "base_pay_min",
+                        "in": "query",
+                        "schema": { "type": "number" }
+                    },
+                    {
+                        "name": "base_pay_max",
+                        "in": "query",
+                        "schema": { "type": "number" }
+                    },
+                    {
+                        "name": "performance_pay_min",
+                        "in": "query",
+                        "schema": { "type": "number" }
+                    },
+                    {
+                        "name": "performance_pay_max",
+                        "in": "query",
+                        "schema": { "type": "number" }
+                    },
+                    {
+                        "name": "effective_pay_from",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "effective_pay_to",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "birth_from",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "birth_to",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "race",
+                        "in": "query",
+                        "schema": { "$ref": "#/components/schemas/Race" }
+                    },
+                    {
+                        "name": "religion",
+                        "in": "query",
+                        "schema": { "$ref": "#/components/schemas/Religion" }
+                    },
+                    {
+                        "name": "account_type",
+                        "in": "query",
+                        "schema": { "$ref": "#/components/schemas/AccountType" }
+                    },
+                    {
+                        "name": "has_primary_email",
+                        "in": "query",
+                        "schema": { "type": "boolean" }
+                    },
+                    {
+                        "name": "has_primary_phone",
+                        "in": "query",
+                        "schema": { "type": "boolean" }
+                    },
+                    {
+                        "name": "is_active",
+                        "in": "query",
+                        "schema": { "type": "boolean" }
+                    },
+                    {
+                        "name": "created_from",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "created_to",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "updated_from",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "updated_to",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "sort_by",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": ["id", "first_name", "last_name", "created_at", "updated_at", "employment_type", "gender"]
+                        }
+                    },
+                    {
+                        "name": "sort_dir",
+                        "in": "query",
+                        "schema": { "type": "string", "enum": ["asc", "desc"] }
+                    },
+                    {
+                        "name": "per_page",
+                        "in": "query",
+                        "schema": { "type": "integer", "minimum": 1, "maximum": 100 }
+                    },
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "schema": { "type": "integer", "minimum": 1 }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Paginated employees",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/EmployeeIndexResponse" },
+                                "example": {
+                                    "current_page": 1,
+                                    "data": [
+                                        {
+                                            "id": 10,
+                                            "first_name": "John",
+                                            "middle_name": null,
+                                            "last_name": "Doe",
+                                            "gender": "male",
+                                            "employment_type": "W2",
+                                            "created_at": "2026-04-16T08:00:00.000000Z",
+                                            "updated_at": "2026-04-16T08:00:00.000000Z",
+                                            "status_histories": [],
+                                            "pay_histories": [],
+                                            "contacts": [],
+                                            "addresses": [],
+                                            "availability_days": [],
+                                            "financial_infos": [],
+                                            "ids": [],
+                                            "obsession": null,
+                                            "positions": [],
+                                            "stores": [],
+                                            "maritals": [],
+                                            "attachments": []
+                                        }
+                                    ],
+                                    "first_page_url": "http://localhost/api/v1/employees?page=1",
+                                    "from": 1,
+                                    "last_page": 1,
+                                    "last_page_url": "http://localhost/api/v1/employees?page=1",
+                                    "links": [],
+                                    "next_page_url": null,
+                                    "path": "http://localhost/api/v1/employees",
+                                    "per_page": 25,
+                                    "prev_page_url": null,
+                                    "to": 1,
+                                    "total": 1
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/stores/{storeNumber}/employees": {
             "get": {
                 "tags": ["Employee Workflow"],
@@ -659,6 +910,191 @@
                                 "schema": {
                                     "$ref": "#/components/schemas/EmployeeWorkflowEnvelope"
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/requests": {
+            "get": {
+                "tags": ["Workflow Requests"],
+                "summary": "List workflow requests across stores (hiring + separation + milestone gift)",
+                "description": "Store-agnostic unified feed. Pass `storeIds[]` to restrict to one or more stores; omit to return requests across all stores. Each item carries a `request_type` field and a matching typed object; the other two are always `null`. All filters from the store-scoped endpoint are supported.",
+                "parameters": [
+                    {
+                        "name": "storeIds[]",
+                        "in": "query",
+                        "description": "Filter by one or more store numbers (e.g. NY001). Omit to return requests across all stores.",
+                        "schema": {
+                            "type": "array",
+                            "items": { "type": "string" }
+                        }
+                    },
+                    {
+                        "name": "q",
+                        "in": "query",
+                        "description": "Free-text search. For separation: employee names and notes. For hiring: candidate fields and final notes.",
+                        "schema": { "type": "string" }
+                    },
+                    {
+                        "name": "request_type",
+                        "in": "query",
+                        "description": "Filter a single workflow type.",
+                        "schema": { "$ref": "#/components/schemas/RequestType" }
+                    },
+                    {
+                        "name": "request_types[]",
+                        "in": "query",
+                        "description": "Filter multiple workflow types.",
+                        "schema": {
+                            "type": "array",
+                            "items": { "$ref": "#/components/schemas/RequestType" }
+                        }
+                    },
+                    {
+                        "name": "workflow_status",
+                        "in": "query",
+                        "description": "Filter a single derived workflow status.",
+                        "schema": { "$ref": "#/components/schemas/WorkflowRequestStatus" }
+                    },
+                    {
+                        "name": "workflow_statuses[]",
+                        "in": "query",
+                        "description": "Filter multiple derived workflow statuses.",
+                        "schema": {
+                            "type": "array",
+                            "items": { "$ref": "#/components/schemas/WorkflowRequestStatus" }
+                        }
+                    },
+                    {
+                        "name": "decision",
+                        "in": "query",
+                        "description": "Filter latest decision value.",
+                        "schema": { "$ref": "#/components/schemas/RequestDecision" }
+                    },
+                    {
+                        "name": "decision_in[]",
+                        "in": "query",
+                        "description": "Filter by multiple latest decision values.",
+                        "schema": {
+                            "type": "array",
+                            "items": { "$ref": "#/components/schemas/RequestDecision" }
+                        }
+                    },
+                    {
+                        "name": "separation_type",
+                        "in": "query",
+                        "schema": { "$ref": "#/components/schemas/SeparationType" }
+                    },
+                    {
+                        "name": "shift_type",
+                        "in": "query",
+                        "schema": { "$ref": "#/components/schemas/ShiftType" }
+                    },
+                    {
+                        "name": "availability_type",
+                        "in": "query",
+                        "schema": { "$ref": "#/components/schemas/AvailabilityType" }
+                    },
+                    {
+                        "name": "milestone_gift_stage",
+                        "in": "query",
+                        "description": "Filter milestone gift requests by stage.",
+                        "schema": { "$ref": "#/components/schemas/MilestoneGiftStage" }
+                    },
+                    {
+                        "name": "milestone",
+                        "in": "query",
+                        "description": "Filter milestone gift requests by the gift milestone.",
+                        "schema": { "$ref": "#/components/schemas/MilestoneGiftMilestone" }
+                    },
+                    {
+                        "name": "employee_id",
+                        "in": "query",
+                        "description": "Matches separation request employee, hired employee in hiring decision entries, or milestone gift request employee.",
+                        "schema": { "type": "integer" }
+                    },
+                    {
+                        "name": "requested_by_user_id",
+                        "in": "query",
+                        "schema": { "type": "integer" }
+                    },
+                    {
+                        "name": "decision_by_user_id",
+                        "in": "query",
+                        "schema": { "type": "integer" }
+                    },
+                    {
+                        "name": "desired_start_from",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "desired_start_to",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "final_working_from",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "final_working_to",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "created_from",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "created_to",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "decided_from",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "decided_to",
+                        "in": "query",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "sort_by",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": ["requested_at", "id", "final_working_day", "desired_start_date", "latest_decided_at"]
+                        }
+                    },
+                    {
+                        "name": "sort_dir",
+                        "in": "query",
+                        "schema": { "type": "string", "enum": ["asc", "desc"] }
+                    },
+                    {
+                        "name": "per_page",
+                        "in": "query",
+                        "schema": { "type": "integer", "minimum": 1, "maximum": 100 }
+                    },
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "schema": { "type": "integer", "minimum": 1 }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Unified workflow request feed",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/WorkflowRequestIndexResponse" }
                             }
                         }
                     }
@@ -1590,6 +2026,112 @@
                     },
                     "422": { "description": "Validation error or wrong stage" },
                     "404": { "description": "Request not found in this store" }
+                }
+            }
+        },
+        "/v1/reports": {
+            "get": {
+                "tags": ["Manager Dashboard"],
+                "summary": "Multi-store date-range reports",
+                "description": "Returns the same four dashboard sections as the single-store reports endpoint (`manager-dashboard`, `high-hours-employees`, `average-hourly-pay`, `weekly-labor`) but for multiple stores over an explicit date range in a single call.\n\n**Store selection:** Pass `stores[]=101&stores[]=102` for specific stores, or `stores[]=all` to include every store.\n\n**Date range:** `start_date` and `end_date` are used directly as metric window boundaries (inclusive). Weekly-labor entries are bucketed into Tuesday–Monday business weeks within the range.\n\n**Full details:** The `average-hourly-pay` section returns one row per employee (pay, hours, tips, labor) rather than store-level aggregates. All other sections match the single-store equivalents.\n\nThe response is a plain object keyed by store number.",
+                "parameters": [
+                    {
+                        "name": "stores[]",
+                        "in": "query",
+                        "required": true,
+                        "description": "One or more store numbers, e.g. `stores[]=101&stores[]=102`. Pass `stores[]=all` to include every store.",
+                        "schema": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": { "type": "string" }
+                        }
+                    },
+                    {
+                        "name": "start_date",
+                        "in": "query",
+                        "required": true,
+                        "description": "Range start date (YYYY-MM-DD, inclusive).",
+                        "schema": { "type": "string", "format": "date" }
+                    },
+                    {
+                        "name": "end_date",
+                        "in": "query",
+                        "required": true,
+                        "description": "Range end date (YYYY-MM-DD, inclusive). Must be on or after start_date.",
+                        "schema": { "type": "string", "format": "date" }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Report data keyed by store number",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/MultiStoreReportsResponse" },
+                                "example": {
+                                    "101": {
+                                        "manager-dashboard": {
+                                            "store_id": "101",
+                                            "start_date": "2026-06-01",
+                                            "end_date": "2026-06-07",
+                                            "employees": [
+                                                {
+                                                    "employee_id": 42,
+                                                    "name": { "first": "Jane", "middle": null, "last": "Doe" },
+                                                    "status": "active",
+                                                    "birthday": { "is_upcoming": false },
+                                                    "position": "Shift Lead",
+                                                    "base_pay": "16.50",
+                                                    "performance_pay": "2.00",
+                                                    "metrics": [
+                                                        { "metric_date": "2026-06-03", "label": "Hours", "value": "38.5", "value_numeric": 38.5 }
+                                                    ]
+                                                }
+                                            ]
+                                        },
+                                        "high-hours-employees": {
+                                            "store": "101",
+                                            "start_date": "2026-06-01",
+                                            "end_date": "2026-06-07",
+                                            "employees": [
+                                                {
+                                                    "employee_id": 55,
+                                                    "first_name": "Carlos",
+                                                    "last_name": "Rivera",
+                                                    "position": "Cook",
+                                                    "total_hours": 62.5,
+                                                    "hourly_pay": 15.0,
+                                                    "gross_pay": 937.5
+                                                }
+                                            ]
+                                        },
+                                        "average-hourly-pay": {
+                                            "store": "101",
+                                            "start_date": "2026-06-01",
+                                            "end_date": "2026-06-07",
+                                            "employees": [
+                                                {
+                                                    "employee_id": 42,
+                                                    "first_name": "Jane",
+                                                    "last_name": "Doe",
+                                                    "hourly_pay": 16.50,
+                                                    "total_hours": 38.5,
+                                                    "tips": 120.0,
+                                                    "labor": 28.5
+                                                }
+                                            ]
+                                        },
+                                        "weekly-labor": {
+                                            "store": "101",
+                                            "entries": [
+                                                { "week_start": "2026-06-02", "week_end": "2026-06-08", "labor": 28.5 }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "422": { "description": "Validation error — missing or invalid parameters" }
                 }
             }
         },
@@ -3206,6 +3748,119 @@
                     "created_at": { "type": "string", "format": "date-time" },
                     "updated_at": { "type": "string", "format": "date-time" }
                 }
+            },
+            "MultiStoreReportDashboardEmployee": {
+                "type": "object",
+                "properties": {
+                    "employee_id":      { "type": "integer" },
+                    "name": {
+                        "type": "object",
+                        "properties": {
+                            "first":  { "type": "string" },
+                            "middle": { "type": ["string", "null"] },
+                            "last":   { "type": "string" }
+                        }
+                    },
+                    "status":           { "type": "string", "enum": ["active", "inactive"] },
+                    "birthday":         { "$ref": "#/components/schemas/ManagerDashboardBirthday" },
+                    "position":         { "type": ["string", "null"] },
+                    "base_pay":         { "type": ["string", "null"] },
+                    "performance_pay":  { "type": ["string", "null"] },
+                    "metrics": {
+                        "type": "array",
+                        "description": "All metric rows within the requested date range (columns 2, 3, 10, 31).",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "metric_date":    { "type": "string", "format": "date" },
+                                "label":          { "type": "string" },
+                                "value":          { "type": ["string", "null"] },
+                                "value_numeric":  { "type": ["number", "null"] }
+                            }
+                        }
+                    }
+                }
+            },
+            "MultiStoreReportDashboard": {
+                "type": "object",
+                "properties": {
+                    "store_id":   { "type": "string" },
+                    "start_date": { "type": "string", "format": "date" },
+                    "end_date":   { "type": "string", "format": "date" },
+                    "employees":  { "type": "array", "items": { "$ref": "#/components/schemas/MultiStoreReportDashboardEmployee" } }
+                }
+            },
+            "MultiStoreReportHighHoursEmployee": {
+                "type": "object",
+                "properties": {
+                    "employee_id": { "type": "integer" },
+                    "first_name":  { "type": "string" },
+                    "last_name":   { "type": "string" },
+                    "position":    { "type": ["string", "null"] },
+                    "total_hours": { "type": ["number", "null"], "description": "Column id 3 — total hours for the period." },
+                    "hourly_pay":  { "type": ["number", "null"], "description": "Column id 2 — hourly pay rate." },
+                    "gross_pay":   { "type": ["number", "null"], "description": "Column id 10 — gross pay." }
+                }
+            },
+            "MultiStoreReportHighHours": {
+                "type": "object",
+                "properties": {
+                    "store":      { "type": "string" },
+                    "start_date": { "type": "string", "format": "date" },
+                    "end_date":   { "type": "string", "format": "date" },
+                    "employees":  { "type": "array", "description": "Employees with ≥ 60 total hours (column id 3) in the period.", "items": { "$ref": "#/components/schemas/MultiStoreReportHighHoursEmployee" } }
+                }
+            },
+            "MultiStoreReportPayEmployee": {
+                "type": "object",
+                "description": "Per-employee pay detail for the requested date range. Each field reflects the MAX value recorded across all metric rows for that employee in the period.",
+                "properties": {
+                    "employee_id": { "type": "integer" },
+                    "first_name":  { "type": "string" },
+                    "last_name":   { "type": "string" },
+                    "hourly_pay":  { "type": ["number", "null"], "description": "Column id 2 — hourly pay rate." },
+                    "total_hours": { "type": ["number", "null"], "description": "Column id 3 — total hours." },
+                    "tips":        { "type": ["number", "null"], "description": "Column id 4 — tips." },
+                    "labor":       { "type": ["number", "null"], "description": "Column id 23 — labor percentage (multiplied by 100)." }
+                }
+            },
+            "MultiStoreReportAvgPay": {
+                "type": "object",
+                "properties": {
+                    "store":      { "type": "string" },
+                    "start_date": { "type": "string", "format": "date" },
+                    "end_date":   { "type": "string", "format": "date" },
+                    "employees":  { "type": "array", "description": "One row per employee — full detail, not aggregated.", "items": { "$ref": "#/components/schemas/MultiStoreReportPayEmployee" } }
+                }
+            },
+            "MultiStoreReportWeeklyLaborEntry": {
+                "type": "object",
+                "properties": {
+                    "week_start": { "type": "string", "format": "date", "description": "Tuesday that starts the bucket." },
+                    "week_end":   { "type": "string", "format": "date", "description": "Monday that ends the bucket." },
+                    "labor":      { "type": ["number", "null"], "description": "Average labor % × 100 for this week. Null if no data." }
+                }
+            },
+            "MultiStoreReportWeeklyLabor": {
+                "type": "object",
+                "properties": {
+                    "store":   { "type": "string" },
+                    "entries": { "type": "array", "description": "One entry per Tuesday–Monday week that overlaps the requested date range.", "items": { "$ref": "#/components/schemas/MultiStoreReportWeeklyLaborEntry" } }
+                }
+            },
+            "MultiStoreReportEntry": {
+                "type": "object",
+                "properties": {
+                    "manager-dashboard":    { "$ref": "#/components/schemas/MultiStoreReportDashboard" },
+                    "high-hours-employees": { "$ref": "#/components/schemas/MultiStoreReportHighHours" },
+                    "average-hourly-pay":   { "$ref": "#/components/schemas/MultiStoreReportAvgPay" },
+                    "weekly-labor":         { "$ref": "#/components/schemas/MultiStoreReportWeeklyLabor" }
+                }
+            },
+            "MultiStoreReportsResponse": {
+                "type": "object",
+                "description": "Object keyed by store number. Each value is a MultiStoreReportEntry.",
+                "additionalProperties": { "$ref": "#/components/schemas/MultiStoreReportEntry" }
             },
             "MilestoneGiftRequestEntity": {
                 "type": "object",

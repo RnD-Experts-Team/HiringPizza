@@ -13,6 +13,30 @@ use Illuminate\Support\Collection;
 
 class WorkflowRequestQueryService
 {
+    public function indexGlobal(array $storeIds, array $filters): LengthAwarePaginator
+    {
+        $requestTypes = $this->resolveRequestTypes($filters);
+
+        $rows = collect();
+
+        if (in_array('separation', $requestTypes, true)) {
+            $rows = $rows->concat($this->fetchSeparationRowsGlobal($storeIds, $filters));
+        }
+
+        if (in_array('hiring', $requestTypes, true)) {
+            $rows = $rows->concat($this->fetchHiringRowsGlobal($storeIds, $filters));
+        }
+
+        if (in_array('milestone_gift', $requestTypes, true)) {
+            $rows = $rows->concat($this->fetchMilestoneGiftRowsGlobal($storeIds, $filters));
+        }
+
+        $rows = $this->applyPostMergeFilters($rows, $filters);
+        $rows = $this->applySorting($rows, $filters);
+
+        return $this->paginateCollection($rows, $filters);
+    }
+
     public function index(Store $store, array $filters): LengthAwarePaginator
     {
         $requestTypes = $this->resolveRequestTypes($filters);
@@ -82,6 +106,7 @@ class WorkflowRequestQueryService
                 'positions',
                 'decisions.user',
                 'decisions.employees.employee',
+                'store'
             ])
             ->where('store_id', $store->id);
 
@@ -124,8 +149,125 @@ class WorkflowRequestQueryService
                 'rating.answers.selectedOptions.questionOption',
                 'decision',
                 'finalStatus',
+                'store'
             ])
             ->where('store_id', $store->id);
+
+        $query
+            ->when($filters['requested_by_user_id'] ?? null, fn(Builder $q, $v) => $q->where('user_id', $v))
+            ->when($filters['employee_id'] ?? null, fn(Builder $q, $v) => $q->where('employee_id', $v))
+            ->when($filters['created_from'] ?? null, fn(Builder $q, $v) => $q->whereDate('created_at', '>=', $v))
+            ->when($filters['created_to'] ?? null, fn(Builder $q, $v) => $q->whereDate('created_at', '<=', $v))
+            ->when($filters['milestone_gift_stage'] ?? null, fn(Builder $q, $v) => $q->where('stage', $v))
+            ->when($filters['milestone'] ?? null, fn(Builder $q, $v) => $q->where('milestone', $v));
+
+        if (!empty($filters['q'])) {
+            $search = trim((string) $filters['q']);
+
+            $query->where(function (Builder $q) use ($search) {
+                $q->whereHas('employee', function (Builder $e) use ($search) {
+                    $e->where('first_name', 'like', "%{$search}%")
+                        ->orWhere('middle_name', 'like', "%{$search}%")
+                        ->orWhere('last_name', 'like', "%{$search}%")
+                        ->orWhereRaw("CONCAT(first_name, ' ', last_name) like ?", ["%{$search}%"]);
+                });
+            });
+        }
+
+        return $query->get()->map(fn(MilestoneGiftRequest $request) => $this->mapMilestoneGiftRow($request));
+    }
+
+    private function fetchSeparationRowsGlobal(array $storeIds, array $filters): Collection
+    {
+        $query = SeparationRequest::query()
+            ->with(['user', 'employee', 'attachments', 'decisions.user', 'store'])
+            ->when(!empty($storeIds), fn(Builder $q) => $q->whereIn('store_id', $storeIds));
+
+        $query
+            ->when($filters['requested_by_user_id'] ?? null, fn(Builder $q, $v) => $q->where('user_id', $v))
+            ->when($filters['employee_id'] ?? null, fn(Builder $q, $v) => $q->where('employee_id', $v))
+            ->when($filters['separation_type'] ?? null, fn(Builder $q, $v) => $q->where('separation_type', $v))
+            ->when($filters['created_from'] ?? null, fn(Builder $q, $v) => $q->whereDate('created_at', '>=', $v))
+            ->when($filters['created_to'] ?? null, fn(Builder $q, $v) => $q->whereDate('created_at', '<=', $v))
+            ->when($filters['final_working_from'] ?? null, fn(Builder $q, $v) => $q->whereDate('final_working_day', '>=', $v))
+            ->when($filters['final_working_to'] ?? null, fn(Builder $q, $v) => $q->whereDate('final_working_day', '<=', $v))
+            ->when($filters['decision_by_user_id'] ?? null, fn(Builder $q, $v) => $q->whereHas('decisions', fn(Builder $d) => $d->where('user_id', $v)))
+            ->when($filters['decided_from'] ?? null, fn(Builder $q, $v) => $q->whereHas('decisions', fn(Builder $d) => $d->whereDate('created_at', '>=', $v)))
+            ->when($filters['decided_to'] ?? null, fn(Builder $q, $v) => $q->whereHas('decisions', fn(Builder $d) => $d->whereDate('created_at', '<=', $v)));
+
+        if (!empty($filters['q'])) {
+            $search = trim((string) $filters['q']);
+
+            $query->where(function (Builder $q) use ($search) {
+                $q->whereHas('employee', function (Builder $e) use ($search) {
+                    $e->where('first_name', 'like', "%{$search}%")
+                        ->orWhere('middle_name', 'like', "%{$search}%")
+                        ->orWhere('last_name', 'like', "%{$search}%")
+                        ->orWhereRaw("CONCAT(first_name, ' ', last_name) like ?", ["%{$search}%"]);
+                })->orWhere('additional_notes', 'like', "%{$search}%")
+                    ->orWhere('termination_reason_details', 'like', "%{$search}%")
+                    ->orWhere('resignation_reason_details', 'like', "%{$search}%");
+            });
+        }
+
+        return $query->get()->map(fn(SeparationRequest $request) => $this->mapSeparationRow($request));
+    }
+
+    private function fetchHiringRowsGlobal(array $storeIds, array $filters): Collection
+    {
+        $query = HiringRequest::query()
+            ->with([
+                'user',
+                'candidates',
+                'positions',
+                'decisions.user',
+                'decisions.employees.employee',
+                'store'
+            ])
+            ->when(!empty($storeIds), fn(Builder $q) => $q->whereIn('store_id', $storeIds));
+
+        $query
+            ->when($filters['requested_by_user_id'] ?? null, fn(Builder $q, $v) => $q->where('user_id', $v))
+            ->when($filters['created_from'] ?? null, fn(Builder $q, $v) => $q->whereDate('created_at', '>=', $v))
+            ->when($filters['created_to'] ?? null, fn(Builder $q, $v) => $q->whereDate('created_at', '<=', $v))
+            ->when($filters['desired_start_from'] ?? null, fn(Builder $q, $v) => $q->whereDate('desired_start_date', '>=', $v))
+            ->when($filters['desired_start_to'] ?? null, fn(Builder $q, $v) => $q->whereDate('desired_start_date', '<=', $v))
+            ->when($filters['shift_type'] ?? null, fn(Builder $q, $v) => $q->whereHas('positions', fn(Builder $p) => $p->where('shift_type', $v)))
+            ->when($filters['availability_type'] ?? null, fn(Builder $q, $v) => $q->whereHas('positions', fn(Builder $p) => $p->where('availability_type', $v)))
+            ->when($filters['decision_by_user_id'] ?? null, fn(Builder $q, $v) => $q->whereHas('decisions', fn(Builder $d) => $d->where('user_id', $v)))
+            ->when($filters['decided_from'] ?? null, fn(Builder $q, $v) => $q->whereHas('decisions', fn(Builder $d) => $d->whereDate('created_at', '>=', $v)))
+            ->when($filters['decided_to'] ?? null, fn(Builder $q, $v) => $q->whereHas('decisions', fn(Builder $d) => $d->whereDate('created_at', '<=', $v)))
+            ->when($filters['employee_id'] ?? null, fn(Builder $q, $v) => $q->whereHas('decisions.employees', fn(Builder $d) => $d->where('employee_id', $v)));
+
+        if (!empty($filters['q'])) {
+            $search = trim((string) $filters['q']);
+
+            $query->where(function (Builder $q) use ($search) {
+                $q->where('final_notes', 'like', "%{$search}%")
+                    ->orWhereHas('candidates', function (Builder $c) use ($search) {
+                        $c->where('name', 'like', "%{$search}%")
+                            ->orWhere('email', 'like', "%{$search}%")
+                            ->orWhere('phone', 'like', "%{$search}%");
+                    });
+            });
+        }
+
+        return $query->get()->map(fn(HiringRequest $request) => $this->mapHiringRow($request));
+    }
+
+    private function fetchMilestoneGiftRowsGlobal(array $storeIds, array $filters): Collection
+    {
+        $query = MilestoneGiftRequest::query()
+            ->with([
+                'user',
+                'employee',
+                'rating.answers.question',
+                'rating.answers.selectedOptions.questionOption',
+                'decision',
+                'finalStatus',
+                'store'
+            ])
+            ->when(!empty($storeIds), fn(Builder $q) => $q->whereIn('store_id', $storeIds));
 
         $query
             ->when($filters['requested_by_user_id'] ?? null, fn(Builder $q, $v) => $q->where('user_id', $v))
