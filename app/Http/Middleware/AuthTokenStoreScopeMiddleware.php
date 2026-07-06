@@ -154,6 +154,7 @@ class AuthTokenStoreScopeMiddleware
             'storeId',
             'storeIds',
             'store',
+            'stores'
         ];
 
         $headers = [];
