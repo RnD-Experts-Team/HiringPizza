@@ -12,7 +12,7 @@ return new class extends Migration {
             $table->foreignId('store_id')->constrained('stores')->onDelete('cascade');
             $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
             $table->foreignId('employee_id')->constrained('employees')->onDelete('cascade');
-            $table->enum('milestone', ['30_days', '90_days', '6_months', '1_year', '2_years', 'other']);
+            $table->enum('milestone', ['8_days', '1_month', '2_months', '3_months', '4_months', '5_months', '6_months', '8_months', '1_year', 'other']);
             $table->string('milestone_other')->nullable();
             $table->enum('stage', ['created', 'rating', 'gift_decision', 'final_status', 'closed', 'cancelled'])->default('created');
             $table->timestamps();
