@@ -16,7 +16,7 @@ class MilestoneGiftRequestStoreRequest extends FormRequest
     {
         return [
             'employee_id' => ['required', 'integer', 'exists:employees,id'],
-            'milestone' => ['required', Rule::in(['30_days', '90_days', '6_months', '1_year', '2_years', 'other'])],
+            'milestone' => ['required', Rule::in(['8_days', '1_month', '2_months', '3_months', '4_months', '5_months', '6_months', '8_months', '1_year', 'other'])],
             'milestone_other' => ['required_if:milestone,other', 'nullable', 'string', 'max:255'],
         ];
     }

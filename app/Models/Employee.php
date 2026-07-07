@@ -65,6 +65,11 @@ class Employee extends Model
         return $this->hasMany(EmployeeMetric::class);
     }
 
+    public function currentWeekMetrics(): HasMany
+    {
+        return $this->hasMany(EmployeeMetric::class);
+    }
+
     public function obsession(): HasOne
     {
         return $this->hasOne(EmployeeObsession::class);
