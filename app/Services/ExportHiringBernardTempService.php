@@ -12,10 +12,13 @@ class ExportHiringBernardTempService
     /**
      * Export employees to CSV format.
      *
-     * Important:
-     * If $store is provided, we do not filter by historical employee_stores directly.
-     * We first calculate the employee's export store, then include the employee only
-     * if their current/export store matches the requested store.
+     * Final export logic:
+     * - Status is based on the latest status effective_date.
+     * - Status Effective Date is the latest status effective_date.
+     * - Hired Date is a separate column using the oldest hired / rehired / OJE date.
+     * - Store # is based on the latest employee_stores effective_date.
+     * - Store-filtered exports compare against the latest employee_stores store, not historical stores.
+     * - Pay, position, marital status, and financial info use their own latest effective_date.
      */
     public function export(?Store $store = null): StreamedResponse
     {
@@ -74,12 +77,12 @@ class ExportHiringBernardTempService
 
             'Status',
             'Status Effective Date',
+            'Hired Date',
 
             'Store #',
             'Position',
             'Marital Status',
 
-            'Hired Date',
             'Birthdate',
 
             'Base Pay',
@@ -132,13 +135,13 @@ class ExportHiringBernardTempService
             $this->enumValue($employee->employment_type),
 
             $this->getStatusValue($latestStatusHistory),
-            $this->getStatusBasedEffectiveDate($employee, $latestStatusHistory),
+            $this->getStatusEffectiveDate($latestStatusHistory),
+            $this->getHiredDate($employee),
 
-            $this->getStoreNumberForExport($employee, $latestStatusHistory, $latestStore),
+            $this->getStoreNumber($latestStore),
             $this->getPositionLabel($latestPosition),
             $this->getMaritalStatusLabel($latestMarital),
 
-            $this->getOldestHiredDate($employee),
             $this->getBirthdate($employee),
 
             $this->safeAttribute($latestPayHistory, 'base_pay'),
@@ -170,14 +173,9 @@ class ExportHiringBernardTempService
 
     private function employeeBelongsToExportStore(Employee $employee, Store $store): bool
     {
-        $latestStatusHistory = $this->getLatestStatusHistory($employee);
         $latestStore = $this->latestByEffectiveDate($employee->stores);
 
-        $exportStoreNumber = $this->getStoreNumberForExport(
-            $employee,
-            $latestStatusHistory,
-            $latestStore
-        );
+        $exportStoreNumber = $this->getStoreNumber($latestStore);
 
         return (string) $exportStoreNumber === (string) $store->store_number;
     }
@@ -190,24 +188,10 @@ class ExportHiringBernardTempService
             ->first();
     }
 
-    private function getStatusBasedEffectiveDate(Employee $employee, mixed $latestStatusHistory): string
+    private function getStatusEffectiveDate(mixed $latestStatusHistory): string
     {
         if (!$latestStatusHistory) {
             return '';
-        }
-
-        $latestStatus = $this->normalizeStatus(
-            $this->safeAttribute($latestStatusHistory, 'status')
-        );
-
-        if ($this->isActiveHiringStatus($latestStatus)) {
-            return $this->getOldestHiredDate($employee);
-        }
-
-        if ($this->isInactiveStatus($latestStatus)) {
-            return $this->formatDate(
-                $this->safeAttribute($latestStatusHistory, 'effective_date')
-            );
         }
 
         return $this->formatDate(
@@ -215,11 +199,11 @@ class ExportHiringBernardTempService
         );
     }
 
-    private function getOldestHiredDate(Employee $employee): string
+    private function getHiredDate(Employee $employee): string
     {
-        $oldestHiredHistory = $employee->statusHistories
+        $oldestHiringStatus = $employee->statusHistories
             ->filter(function ($statusHistory): bool {
-                return $this->isActiveHiringStatus(
+                return $this->isHiringStatus(
                     $this->normalizeStatus(
                         $this->safeAttribute($statusHistory, 'status')
                     )
@@ -237,23 +221,18 @@ class ExportHiringBernardTempService
             })
             ->first();
 
-        if (!$oldestHiredHistory) {
+        if (!$oldestHiringStatus) {
             return '';
         }
 
         return $this->formatDate(
-            $this->safeAttribute($oldestHiredHistory, 'effective_date')
+            $this->safeAttribute($oldestHiringStatus, 'effective_date')
         );
     }
 
-    private function isActiveHiringStatus(?string $status): bool
+    private function isHiringStatus(?string $status): bool
     {
         return in_array($status, ['hired', 'rehired', 'oje'], true);
-    }
-
-    private function isInactiveStatus(?string $status): bool
-    {
-        return in_array($status, ['terminated', 'resigned'], true);
     }
 
     private function normalizeStatus(mixed $status): ?string
@@ -357,58 +336,6 @@ class ExportHiringBernardTempService
         return (string) $this->enumValue(
             $this->safeAttribute($statusHistory, 'status')
         );
-    }
-
-    private function getStoreNumberForExport(
-        Employee $employee,
-        mixed $latestStatusHistory,
-        mixed $latestStore
-    ): string {
-        $latestStatus = $this->normalizeStatus(
-            $this->safeAttribute($latestStatusHistory, 'status')
-        );
-
-        $statusStoreId = $this->safeAttribute($latestStatusHistory, 'store_id');
-
-        /*
-         * If the employee's latest status is hired, rehired, or OJE,
-         * the exported store should be the store tied to that latest status event.
-         *
-         * Example:
-         * - Employee was hired at Store A
-         * - Employee was later rehired at Store B
-         * Export should show Store B.
-         */
-        if ($this->isActiveHiringStatus($latestStatus) && $statusStoreId) {
-            $matchingStoreAssignment = $employee->stores
-                ->filter(function ($employeeStore) use ($statusStoreId): bool {
-                    return (string) $this->safeAttribute($employeeStore, 'store_id')
-                        === (string) $statusStoreId;
-                })
-                ->sort(function ($a, $b): int {
-                    $dateComparison = $this->effectiveDateSortValue($b) <=> $this->effectiveDateSortValue($a);
-
-                    if ($dateComparison !== 0) {
-                        return $dateComparison;
-                    }
-
-                    return ((int) ($this->safeAttribute($b, 'id') ?? 0))
-                        <=> ((int) ($this->safeAttribute($a, 'id') ?? 0));
-                })
-                ->first();
-
-            if ($matchingStoreAssignment) {
-                return $this->getStoreNumber($matchingStoreAssignment);
-            }
-
-            $store = Store::query()->find($statusStoreId);
-
-            if ($store) {
-                return (string) $store->store_number;
-            }
-        }
-
-        return $this->getStoreNumber($latestStore);
     }
 
     private function getStoreNumber(mixed $employeeStore): string
