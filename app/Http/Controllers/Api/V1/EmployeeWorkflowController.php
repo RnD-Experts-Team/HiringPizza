@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\EmployeeDestroyRequest;
 use App\Http\Requests\Api\V1\EmployeeGlobalIndexRequest;
 use App\Http\Requests\Api\V1\EmployeeIndexRequest;
+use App\Http\Requests\Api\V1\EmployeeOperationalRequest;
 use App\Http\Requests\Api\V1\EmployeeSeparationStatusExportRequest;
 use App\Http\Requests\Api\V1\EmployeeStatusChangeRequest;
 use App\Http\Requests\Api\V1\EmployeeTenureExportRequest;
@@ -13,6 +14,7 @@ use App\Http\Requests\Api\V1\EmployeeWorkflowStoreRequest;
 use App\Http\Requests\Api\V1\EmployeeWorkflowUpdateRequest;
 use App\Models\Employee;
 use App\Services\EmployeeExportService;
+use App\Services\EmployeeMetricQueryService;
 use App\Services\EmployeeQueryService;
 use App\Services\EmployeeWorkflowService;
 use App\Services\ExportHiringBernardTempService;
@@ -26,6 +28,7 @@ class EmployeeWorkflowController extends Controller
     public function __construct(
         private readonly EmployeeWorkflowService $workflowService,
         private readonly EmployeeQueryService $queryService,
+        private readonly EmployeeMetricQueryService $metricQueryService,
         private readonly EmployeeExportService $exportService,
         private readonly ExportHiringBernardTempService $exportHiringBernardTempService
     ) {
@@ -71,6 +74,25 @@ class EmployeeWorkflowController extends Controller
         $employee = $this->exposeSensitiveAttributes($employee);
 
         return response()->json(['data' => $employee]);
+    }
+
+    public function operational(EmployeeOperationalRequest $request, string $storeNumber, Employee $employee): JsonResponse
+    {
+        $store = $this->workflowService->resolveStoreByNumber($storeNumber);
+        $employee = $this->workflowService->loadForStore($store, $employee);
+        $employee = $this->exposeSensitiveAttributes($employee);
+
+        $operational = $this->metricQueryService->operationalForEmployee(
+            $employee->id,
+            $request->validated()
+        );
+
+        return response()->json([
+            'data' => [
+                'employee' => $employee,
+                'operational' => $operational,
+            ],
+        ]);
     }
 
     public function store(EmployeeWorkflowStoreRequest $request, string $storeNumber): JsonResponse
