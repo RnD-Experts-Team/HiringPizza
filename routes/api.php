@@ -91,6 +91,11 @@ Route::prefix('v1')->middleware('auth.token.store')->group(function (): void {
             Route::get('employees/{employee}', [EmployeeWorkflowController::class, 'show'])
                 ->name('api.v1.stores.employees.show');
 
+            // Full employee info + operational history (all metric/column values
+            // ever recorded for the employee). Pass ?paginated=1 to paginate.
+            Route::get('employees/{employee}/operational', [EmployeeWorkflowController::class, 'operational'])
+                ->name('api.v1.stores.employees.operational');
+
             Route::post('employees/{employee}', [EmployeeWorkflowController::class, 'update'])
                 ->name('api.v1.stores.employees.update');
 
