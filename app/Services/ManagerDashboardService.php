@@ -35,7 +35,6 @@ class ManagerDashboardService
         $highHours   = $this->bulkHighHoursEmployees($storeNumbers, $startDate, $endDate);
         $avgPay      = $this->bulkAverageHourlyPayDetailed($storeNumbers, $startDate, $endDate);
         $weeklyLabor = $this->bulkWeeklyLabor($storeNumbers, $startDate, $endDate);
-        $totalHours  = $this->bulkTotalHours($storeNumbers, $startDate, $endDate);
 
         $result = [];
         foreach ($storeNumbers as $storeNumber) {
@@ -44,7 +43,6 @@ class ManagerDashboardService
                 'high-hours-employees' => $highHours[$storeNumber],
                 'average-hourly-pay'   => $avgPay[$storeNumber],
                 'weekly-labor'         => $weeklyLabor[$storeNumber],
-                'total-hours'          => $totalHours[$storeNumber],
             ];
         }
 
@@ -269,11 +267,12 @@ class ManagerDashboardService
             ->join('stores as s', 's.id', '=', 'es.store_id')
             ->whereIn('s.store_number', $storeNumbers)
             ->whereBetween('em.metric_date', [$overallStart, $overallEnd])
-            ->where('emv.column_id', 23)
+            ->whereIn('emv.column_id', [3, 23])
             ->select([])
             ->selectRaw('s.store_number')
             ->selectRaw('FLOOR(DATEDIFF(em.metric_date, ?) / 7) AS week_index', [$overallStart])
-            ->selectRaw('AVG(emv.value_numeric) AS labor')
+            ->selectRaw('AVG(CASE WHEN emv.column_id = 23 THEN emv.value_numeric END) AS labor')
+            ->selectRaw('COALESCE(SUM(CASE WHEN emv.column_id = 3 THEN emv.value_numeric END), 0) AS total_hours')
             ->groupByRaw('s.store_number, week_index')
             ->get()
             ->groupBy('store_number');
@@ -285,55 +284,18 @@ class ManagerDashboardService
             $entries = [];
             foreach ($weeks as $index => $week) {
                 $entries[] = [
-                    'week_start' => $week['week_start'],
-                    'week_end'   => $week['week_end'],
-                    'labor'      => isset($storeRows[$index]) && $storeRows[$index]->labor !== null
+                    'week_start'  => $week['week_start'],
+                    'week_end'    => $week['week_end'],
+                    'labor'       => isset($storeRows[$index]) && $storeRows[$index]->labor !== null
                         ? round((float) $storeRows[$index]->labor * 100, 2)
                         : null,
+                    'total_hours' => isset($storeRows[$index])
+                        ? round((float) $storeRows[$index]->total_hours, 2)
+                        : 0,
                 ];
             }
 
             $result[$storeNumber] = ['store' => $storeNumber, 'entries' => $entries];
-        }
-
-        return $result;
-    }
-
-    private function bulkTotalHours(array $storeNumbers, string $startDate, string $endDate): array
-    {
-        $latestEmployeeStores = EmployeeStore::query()
-            ->select('employee_id', DB::raw('MAX(effective_date) as effective_date'))
-            ->whereDate('effective_date', '<=', $endDate)
-            ->groupBy('employee_id');
-
-        $rows = EmployeeMetric::query()
-            ->from('employee_metrics as em')
-            ->join('employee_metric_values as emv', 'emv.employee_metric_id', '=', 'em.id')
-            ->joinSub($latestEmployeeStores, 'latest_es', function ($join) {
-                $join->on('latest_es.employee_id', '=', 'em.employee_id');
-            })
-            ->join('employee_stores as es', function ($join) {
-                $join->on('es.employee_id', '=', 'latest_es.employee_id')
-                    ->on('es.effective_date', '=', 'latest_es.effective_date');
-            })
-            ->join('stores as s', 's.id', '=', 'es.store_id')
-            ->whereIn('s.store_number', $storeNumbers)
-            ->whereBetween('em.metric_date', [$startDate, $endDate])
-            ->where('emv.column_id', 3)
-            ->select('s.store_number')
-            ->selectRaw('COALESCE(SUM(emv.value_numeric), 0) as total_hours')
-            ->groupBy('s.store_number')
-            ->get()
-            ->keyBy('store_number');
-
-        $result = [];
-        foreach ($storeNumbers as $storeNumber) {
-            $result[$storeNumber] = [
-                'store'       => $storeNumber,
-                'start_date'  => $startDate,
-                'end_date'    => $endDate,
-                'total_hours' => round((float) ($rows->get($storeNumber)->total_hours ?? 0), 2),
-            ];
         }
 
         return $result;
@@ -510,10 +472,11 @@ class ManagerDashboardService
             ->join('stores as s', 's.id', '=', 'es.store_id')
             ->where('s.store_number', $store)
             ->whereBetween('em.metric_date', [$overallStart, $overallEnd])
-            ->where('emv.column_id', 23)
+            ->whereIn('emv.column_id', [3, 23])
             ->select([])
             ->selectRaw('FLOOR(DATEDIFF(em.metric_date, ?) / 7) AS week_index', [$overallStart])
-            ->selectRaw('AVG(emv.value_numeric) AS labor')
+            ->selectRaw('AVG(CASE WHEN emv.column_id = 23 THEN emv.value_numeric END) AS labor')
+            ->selectRaw('COALESCE(SUM(CASE WHEN emv.column_id = 3 THEN emv.value_numeric END), 0) AS total_hours')
             ->groupByRaw('week_index')
             ->get()
             ->keyBy('week_index');
@@ -521,57 +484,20 @@ class ManagerDashboardService
         $entries = [];
         foreach ($weeks as $index => $week) {
             $entries[] = [
-                'week_start' => $week['week_start'],
-                'week_end'   => $week['week_end'],
-                'labor'      => isset($rows[$index]) && $rows[$index]->labor !== null
+                'week_start'  => $week['week_start'],
+                'week_end'    => $week['week_end'],
+                'labor'       => isset($rows[$index]) && $rows[$index]->labor !== null
                     ? round((float) $rows[$index]->labor * 100, 2)
                     : null,
+                'total_hours' => isset($rows[$index])
+                    ? round((float) $rows[$index]->total_hours, 2)
+                    : 0,
             ];
         }
 
         return [
             'store'   => $store,
             'entries' => $entries,
-        ];
-    }
-
-    public function getTotalHours(string $store, string $date): array
-    {
-        $day = CarbonImmutable::parse($date)->startOfDay();
-
-        [$weekStart, $weekEnd] = $this->isoBusinessWeek($day);
-
-        $weekStartDate = $weekStart->toDateString();
-        $weekEndDate = $weekEnd->toDateString();
-
-        $latestEmployeeStores = EmployeeStore::query()
-            ->select('employee_id', DB::raw('MAX(effective_date) as effective_date'))
-            ->whereDate('effective_date', '<=', $weekEndDate)
-            ->groupBy('employee_id');
-
-        $metrics = EmployeeMetric::query()
-            ->from('employee_metrics as em')
-            ->join('employee_metric_values as emv', 'emv.employee_metric_id', '=', 'em.id')
-            ->joinSub($latestEmployeeStores, 'latest_es', function ($join) {
-                $join->on('latest_es.employee_id', '=', 'em.employee_id');
-            })
-            ->join('employee_stores as es', function ($join) {
-                $join->on('es.employee_id', '=', 'latest_es.employee_id')
-                    ->on('es.effective_date', '=', 'latest_es.effective_date');
-            })
-            ->join('stores as s', 's.id', '=', 'es.store_id')
-            ->where('s.store_number', $store)
-            ->whereBetween('em.metric_date', [$weekStartDate, $weekEndDate])
-            ->where('emv.column_id', 3)
-            ->selectRaw('COALESCE(SUM(emv.value_numeric), 0) as total_hours')
-            ->first();
-
-        return [
-            'store' => $store,
-            'date' => $day->toDateString(),
-            'week_start' => $weekStartDate,
-            'week_end' => $weekEndDate,
-            'total_hours' => round((float) ($metrics->total_hours ?? 0), 2),
         ];
     }
 
