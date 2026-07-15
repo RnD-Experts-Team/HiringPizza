@@ -35,6 +35,7 @@ class ManagerDashboardService
         $highHours   = $this->bulkHighHoursEmployees($storeNumbers, $startDate, $endDate);
         $avgPay      = $this->bulkAverageHourlyPayDetailed($storeNumbers, $startDate, $endDate);
         $weeklyLabor = $this->bulkWeeklyLabor($storeNumbers, $startDate, $endDate);
+        $totalHours  = $this->bulkTotalHours($storeNumbers, $startDate, $endDate);
 
         $result = [];
         foreach ($storeNumbers as $storeNumber) {
@@ -43,6 +44,7 @@ class ManagerDashboardService
                 'high-hours-employees' => $highHours[$storeNumber],
                 'average-hourly-pay'   => $avgPay[$storeNumber],
                 'weekly-labor'         => $weeklyLabor[$storeNumber],
+                'total-hours'          => $totalHours[$storeNumber],
             ];
         }
 
@@ -297,6 +299,46 @@ class ManagerDashboardService
         return $result;
     }
 
+    private function bulkTotalHours(array $storeNumbers, string $startDate, string $endDate): array
+    {
+        $latestEmployeeStores = EmployeeStore::query()
+            ->select('employee_id', DB::raw('MAX(effective_date) as effective_date'))
+            ->whereDate('effective_date', '<=', $endDate)
+            ->groupBy('employee_id');
+
+        $rows = EmployeeMetric::query()
+            ->from('employee_metrics as em')
+            ->join('employee_metric_values as emv', 'emv.employee_metric_id', '=', 'em.id')
+            ->joinSub($latestEmployeeStores, 'latest_es', function ($join) {
+                $join->on('latest_es.employee_id', '=', 'em.employee_id');
+            })
+            ->join('employee_stores as es', function ($join) {
+                $join->on('es.employee_id', '=', 'latest_es.employee_id')
+                    ->on('es.effective_date', '=', 'latest_es.effective_date');
+            })
+            ->join('stores as s', 's.id', '=', 'es.store_id')
+            ->whereIn('s.store_number', $storeNumbers)
+            ->whereBetween('em.metric_date', [$startDate, $endDate])
+            ->where('emv.column_id', 3)
+            ->select('s.store_number')
+            ->selectRaw('COALESCE(SUM(emv.value_numeric), 0) as total_hours')
+            ->groupBy('s.store_number')
+            ->get()
+            ->keyBy('store_number');
+
+        $result = [];
+        foreach ($storeNumbers as $storeNumber) {
+            $result[$storeNumber] = [
+                'store'       => $storeNumber,
+                'start_date'  => $startDate,
+                'end_date'    => $endDate,
+                'total_hours' => round((float) ($rows->get($storeNumber)->total_hours ?? 0), 2),
+            ];
+        }
+
+        return $result;
+    }
+
     // -------------------------------------------------------------------------
 
     private function isoBusinessWeek(CarbonImmutable $date): array
@@ -490,6 +532,46 @@ class ManagerDashboardService
         return [
             'store'   => $store,
             'entries' => $entries,
+        ];
+    }
+
+    public function getTotalHours(string $store, string $date): array
+    {
+        $day = CarbonImmutable::parse($date)->startOfDay();
+
+        [$weekStart, $weekEnd] = $this->isoBusinessWeek($day);
+
+        $weekStartDate = $weekStart->toDateString();
+        $weekEndDate = $weekEnd->toDateString();
+
+        $latestEmployeeStores = EmployeeStore::query()
+            ->select('employee_id', DB::raw('MAX(effective_date) as effective_date'))
+            ->whereDate('effective_date', '<=', $weekEndDate)
+            ->groupBy('employee_id');
+
+        $metrics = EmployeeMetric::query()
+            ->from('employee_metrics as em')
+            ->join('employee_metric_values as emv', 'emv.employee_metric_id', '=', 'em.id')
+            ->joinSub($latestEmployeeStores, 'latest_es', function ($join) {
+                $join->on('latest_es.employee_id', '=', 'em.employee_id');
+            })
+            ->join('employee_stores as es', function ($join) {
+                $join->on('es.employee_id', '=', 'latest_es.employee_id')
+                    ->on('es.effective_date', '=', 'latest_es.effective_date');
+            })
+            ->join('stores as s', 's.id', '=', 'es.store_id')
+            ->where('s.store_number', $store)
+            ->whereBetween('em.metric_date', [$weekStartDate, $weekEndDate])
+            ->where('emv.column_id', 3)
+            ->selectRaw('COALESCE(SUM(emv.value_numeric), 0) as total_hours')
+            ->first();
+
+        return [
+            'store' => $store,
+            'date' => $day->toDateString(),
+            'week_start' => $weekStartDate,
+            'week_end' => $weekEndDate,
+            'total_hours' => round((float) ($metrics->total_hours ?? 0), 2),
         ];
     }
 
