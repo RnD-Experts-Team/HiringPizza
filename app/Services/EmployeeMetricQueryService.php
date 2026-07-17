@@ -26,6 +26,72 @@ class EmployeeMetricQueryService
         return $metrics;
     }
 
+    /**
+     * Operational history for a single employee: every metric/column value ever
+     * recorded for them (from the start of time until now), flattened into
+     * { column_name, value } entries like the manager dashboard.
+     *
+     * Returns a LengthAwarePaginator when $filters['paginated'] is truthy,
+     * otherwise the full history as a plain array.
+     *
+     * @return array<int, array<string, mixed>>|LengthAwarePaginator
+     */
+    public function operationalForEmployee(int $employeeId, array $filters): array|LengthAwarePaginator
+    {
+        $sortDir = strtolower((string) ($filters['sort_dir'] ?? 'desc')) === 'asc' ? 'asc' : 'desc';
+
+        $query = EmployeeMetric::query()
+            ->from('employee_metrics as em')
+            ->join('employee_metric_values as emv', 'emv.employee_metric_id', '=', 'em.id')
+            ->join('employee_metric_columns as emc', 'emc.id', '=', 'emv.column_id')
+            ->where('em.employee_id', $employeeId)
+            ->when($filters['date_from'] ?? null, fn(Builder $q, $v) => $q->whereDate('em.metric_date', '>=', $v))
+            ->when($filters['date_to'] ?? null, fn(Builder $q, $v) => $q->whereDate('em.metric_date', '<=', $v))
+            ->select([
+                'em.id as metric_id',
+                'em.metric_date',
+                'em.store_number',
+                'emc.id as column_id',
+                'emc.key as column_key',
+                'emc.label as column_name',
+                'emv.value',
+                'emv.value_numeric',
+            ])
+            ->orderBy('em.metric_date', $sortDir)
+            ->orderBy('emc.id');
+
+        $paginated = filter_var($filters['paginated'] ?? false, FILTER_VALIDATE_BOOLEAN);
+
+        if ($paginated) {
+            $perPage = min((int) ($filters['per_page'] ?? 25), 200);
+
+            $entries = $query->paginate($perPage)->withQueryString();
+            $entries->setCollection(
+                $entries->getCollection()->map(fn($row) => $this->mapOperationalEntry($row))
+            );
+
+            return $entries;
+        }
+
+        return $query->get()
+            ->map(fn($row) => $this->mapOperationalEntry($row))
+            ->all();
+    }
+
+    private function mapOperationalEntry($row): array
+    {
+        return [
+            'metric_date' => $row->metric_date instanceof \Carbon\CarbonInterface
+                ? $row->metric_date->toDateString()
+                : (string) $row->metric_date,
+            'store_number' => $row->store_number,
+            'column_name' => $row->column_name,
+            'column_key' => $row->column_key,
+            'value' => $row->value,
+            'value_numeric' => $row->value_numeric !== null ? (float) $row->value_numeric : null,
+        ];
+    }
+
     private function applyFilters(Builder $query, array $filters): void
     {
         $query

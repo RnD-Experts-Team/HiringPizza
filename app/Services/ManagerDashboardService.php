@@ -267,11 +267,12 @@ class ManagerDashboardService
             ->join('stores as s', 's.id', '=', 'es.store_id')
             ->whereIn('s.store_number', $storeNumbers)
             ->whereBetween('em.metric_date', [$overallStart, $overallEnd])
-            ->where('emv.column_id', 23)
+            ->whereIn('emv.column_id', [3, 23])
             ->select([])
             ->selectRaw('s.store_number')
             ->selectRaw('FLOOR(DATEDIFF(em.metric_date, ?) / 7) AS week_index', [$overallStart])
-            ->selectRaw('AVG(emv.value_numeric) AS labor')
+            ->selectRaw('AVG(CASE WHEN emv.column_id = 23 THEN emv.value_numeric END) AS labor')
+            ->selectRaw('COALESCE(SUM(CASE WHEN emv.column_id = 3 THEN emv.value_numeric END), 0) AS total_hours')
             ->groupByRaw('s.store_number, week_index')
             ->get()
             ->groupBy('store_number');
@@ -283,11 +284,14 @@ class ManagerDashboardService
             $entries = [];
             foreach ($weeks as $index => $week) {
                 $entries[] = [
-                    'week_start' => $week['week_start'],
-                    'week_end'   => $week['week_end'],
-                    'labor'      => isset($storeRows[$index]) && $storeRows[$index]->labor !== null
+                    'week_start'  => $week['week_start'],
+                    'week_end'    => $week['week_end'],
+                    'labor'       => isset($storeRows[$index]) && $storeRows[$index]->labor !== null
                         ? round((float) $storeRows[$index]->labor * 100, 2)
                         : null,
+                    'total_hours' => isset($storeRows[$index])
+                        ? round((float) $storeRows[$index]->total_hours, 2)
+                        : 0,
                 ];
             }
 
@@ -468,10 +472,11 @@ class ManagerDashboardService
             ->join('stores as s', 's.id', '=', 'es.store_id')
             ->where('s.store_number', $store)
             ->whereBetween('em.metric_date', [$overallStart, $overallEnd])
-            ->where('emv.column_id', 23)
+            ->whereIn('emv.column_id', [3, 23])
             ->select([])
             ->selectRaw('FLOOR(DATEDIFF(em.metric_date, ?) / 7) AS week_index', [$overallStart])
-            ->selectRaw('AVG(emv.value_numeric) AS labor')
+            ->selectRaw('AVG(CASE WHEN emv.column_id = 23 THEN emv.value_numeric END) AS labor')
+            ->selectRaw('COALESCE(SUM(CASE WHEN emv.column_id = 3 THEN emv.value_numeric END), 0) AS total_hours')
             ->groupByRaw('week_index')
             ->get()
             ->keyBy('week_index');
@@ -479,11 +484,14 @@ class ManagerDashboardService
         $entries = [];
         foreach ($weeks as $index => $week) {
             $entries[] = [
-                'week_start' => $week['week_start'],
-                'week_end'   => $week['week_end'],
-                'labor'      => isset($rows[$index]) && $rows[$index]->labor !== null
+                'week_start'  => $week['week_start'],
+                'week_end'    => $week['week_end'],
+                'labor'       => isset($rows[$index]) && $rows[$index]->labor !== null
                     ? round((float) $rows[$index]->labor * 100, 2)
                     : null,
+                'total_hours' => isset($rows[$index])
+                    ? round((float) $rows[$index]->total_hours, 2)
+                    : 0,
             ];
         }
 

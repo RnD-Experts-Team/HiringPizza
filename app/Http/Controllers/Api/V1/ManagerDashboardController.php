@@ -35,7 +35,7 @@ class ManagerDashboardController extends Controller
     /**
      * Multi-store date-range report. Accepts stores[] (array of store numbers,
      * or stores[]=all) plus start_date and end_date as query parameters.
-     * Returns the same four sections as reports() but for every requested store
+     * Returns the same sections as reports() but for every requested store
      * over the given date range, keyed by store number.
      */
     public function reportsMultiStore(Request $request): JsonResponse
