@@ -41,7 +41,7 @@ class EmployeeWorkflowStoreRequest extends FormRequest
             'employment_type' => ['required', Rule::in(['W2', '1099'])],
 
             'status_history' => ['sometimes', 'array', 'min:1'],
-            'status_history.*.status' => ['required', Rule::in(['hired', 'resigned', 'terminated', 'rehired', 'OJE'])],
+            'status_history.*.status' => ['required', Rule::in(['hired', 'resigned', 'terminated', 'rehired'])],
             'status_history.*.effective_date' => ['required', 'date'],
             'status_history.*.store_id' => ['nullable', 'integer', 'exists:stores,id'],
             'status_history.*.notes' => ['nullable', 'string'],

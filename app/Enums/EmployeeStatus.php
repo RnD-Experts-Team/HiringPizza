@@ -8,5 +8,4 @@ enum EmployeeStatus: string
     case Resigned = 'resigned';
     case Terminated = 'terminated';
     case Rehired = 'rehired';
-    case OJE = 'OJE';
 }

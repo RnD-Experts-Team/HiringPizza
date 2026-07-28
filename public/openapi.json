@@ -2233,7 +2233,7 @@
             "EmploymentType": { "type": "string", "enum": ["W2", "1099"] },
             "EmployeeStatus": {
                 "type": "string",
-                "enum": ["hired", "resigned", "terminated", "rehired", "OJE"]
+                "enum": ["hired", "resigned", "terminated", "rehired"]
             },
             "DayOfWeek": {
                 "type": "string",
@@ -3016,7 +3016,7 @@
             },
             "MilestoneGiftMilestone": {
                 "type": "string",
-                "enum": ["30_days", "90_days", "6_months", "1_year", "2_years", "other"]
+                "enum": ["8_days", "14_days", "1_month", "2_months", "3_months", "4_months", "5_months", "6_months", "8_months", "1_year", "other"]
             },
             "MilestoneGiftStage": {
                 "type": "string",

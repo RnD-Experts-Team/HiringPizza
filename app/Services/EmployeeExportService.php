@@ -324,7 +324,6 @@ class EmployeeExportService
         $hiredStatuses = [
             EmployeeStatus::Hired,
             EmployeeStatus::Rehired,
-            EmployeeStatus::OJE,
         ];
 
         $hiredHistory = $employee->statusHistories
@@ -356,7 +355,6 @@ class EmployeeExportService
         $normalized = $this->normalizeStatus($status);
 
         return in_array($normalized, [
-            $this->normalizeStatus(EmployeeStatus::OJE->value),
             $this->normalizeStatus(EmployeeStatus::Hired->value),
             $this->normalizeStatus(EmployeeStatus::Rehired->value),
         ], true);
@@ -424,7 +422,6 @@ class EmployeeExportService
     private function canonicalStatus(?string $status): string
     {
         return match ($this->normalizeStatus($status)) {
-            'oje' => EmployeeStatus::OJE->value,
             'hired' => EmployeeStatus::Hired->value,
             'rehired' => EmployeeStatus::Rehired->value,
             'resigned' => EmployeeStatus::Resigned->value,

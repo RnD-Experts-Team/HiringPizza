@@ -23,9 +23,9 @@ class EmployeeGlobalIndexRequest extends FormRequest
             'gender' => ['sometimes', Rule::in(['male', 'female'])],
             'employment_type' => ['sometimes', Rule::in(['W2', '1099'])],
 
-            'status' => ['sometimes', Rule::in(['hired', 'resigned', 'terminated', 'rehired', 'OJE'])],
+            'status' => ['sometimes', Rule::in(['hired', 'resigned', 'terminated', 'rehired'])],
             'status_in' => ['sometimes', 'array'],
-            'status_in.*' => ['required', Rule::in(['hired', 'resigned', 'terminated', 'rehired', 'OJE'])],
+            'status_in.*' => ['required', Rule::in(['hired', 'resigned', 'terminated', 'rehired'])],
 
             'position_id' => ['sometimes', 'integer', 'exists:positions,id'],
             'position_ids' => ['sometimes', 'array'],

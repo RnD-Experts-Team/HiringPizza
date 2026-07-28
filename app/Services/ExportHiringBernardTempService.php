@@ -232,7 +232,7 @@ class ExportHiringBernardTempService
 
     private function isActiveHiringStatus(?string $status): bool
     {
-        return in_array($status, ['hired', 'rehired', 'oje'], true);
+        return in_array($status, ['hired', 'rehired'], true);
     }
 
     private function isInactiveStatus(?string $status): bool

@@ -47,7 +47,7 @@ class EmployeeWorkflowUpdateRequest extends FormRequest
             'employment_type' => ['sometimes', Rule::in(['W2', '1099'])],
 
             'status_history' => ['sometimes', 'array'],
-            'status_history.*.status' => ['required', Rule::in(['hired', 'resigned', 'terminated', 'rehired', 'OJE'])],
+            'status_history.*.status' => ['required', Rule::in(['hired', 'resigned', 'terminated', 'rehired'])],
             'status_history.*.effective_date' => ['required', 'date'],
             'status_history.*.store_id' => ['nullable', 'integer', 'exists:stores,id'],
             'status_history.*.notes' => ['nullable', 'string'],
