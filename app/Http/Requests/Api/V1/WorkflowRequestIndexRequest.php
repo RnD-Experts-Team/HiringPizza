@@ -52,8 +52,18 @@ class WorkflowRequestIndexRequest extends FormRequest
 
             'sort_by' => ['sometimes', Rule::in(['requested_at', 'id', 'final_working_day', 'desired_start_date', 'latest_decided_at'])],
             'sort_dir' => ['sometimes', Rule::in(['asc', 'desc', 'ASC', 'DESC'])],
+
+            // Fallback pagination applied to any type that doesn't specify its own {type}_page/{type}_per_page below.
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
             'page' => ['sometimes', 'integer', 'min:1'],
+
+            // Each request type is paginated independently, since the frontend renders one tab per type.
+            'separation_page' => ['sometimes', 'integer', 'min:1'],
+            'separation_per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
+            'hiring_page' => ['sometimes', 'integer', 'min:1'],
+            'hiring_per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
+            'milestone_gift_page' => ['sometimes', 'integer', 'min:1'],
+            'milestone_gift_per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
         ];
     }
 }

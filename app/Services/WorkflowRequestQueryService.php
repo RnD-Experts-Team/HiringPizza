@@ -13,52 +13,57 @@ use Illuminate\Support\Collection;
 
 class WorkflowRequestQueryService
 {
-    public function indexGlobal(array $storeIds, array $filters): LengthAwarePaginator
+    /**
+     * @return array<string, LengthAwarePaginator>
+     */
+    public function indexGlobal(array $storeIds, array $filters): array
     {
-        $requestTypes = $this->resolveRequestTypes($filters);
+        $fetchers = [
+            'separation' => fn() => $this->fetchSeparationRowsGlobal($storeIds, $filters),
+            'hiring' => fn() => $this->fetchHiringRowsGlobal($storeIds, $filters),
+            'milestone_gift' => fn() => $this->fetchMilestoneGiftRowsGlobal($storeIds, $filters),
+        ];
 
-        $rows = collect();
-
-        if (in_array('separation', $requestTypes, true)) {
-            $rows = $rows->concat($this->fetchSeparationRowsGlobal($storeIds, $filters));
-        }
-
-        if (in_array('hiring', $requestTypes, true)) {
-            $rows = $rows->concat($this->fetchHiringRowsGlobal($storeIds, $filters));
-        }
-
-        if (in_array('milestone_gift', $requestTypes, true)) {
-            $rows = $rows->concat($this->fetchMilestoneGiftRowsGlobal($storeIds, $filters));
-        }
-
-        $rows = $this->applyPostMergeFilters($rows, $filters);
-        $rows = $this->applySorting($rows, $filters);
-
-        return $this->paginateCollection($rows, $filters);
+        return $this->buildGroupedPaginators($fetchers, $filters);
     }
 
-    public function index(Store $store, array $filters): LengthAwarePaginator
+    /**
+     * @return array<string, LengthAwarePaginator>
+     */
+    public function index(Store $store, array $filters): array
+    {
+        $fetchers = [
+            'separation' => fn() => $this->fetchSeparationRows($store, $filters),
+            'hiring' => fn() => $this->fetchHiringRows($store, $filters),
+            'milestone_gift' => fn() => $this->fetchMilestoneGiftRows($store, $filters),
+        ];
+
+        return $this->buildGroupedPaginators($fetchers, $filters);
+    }
+
+    /**
+     * @param array<string, callable(): Collection> $fetchers
+     * @return array<string, LengthAwarePaginator>
+     */
+    private function buildGroupedPaginators(array $fetchers, array $filters): array
     {
         $requestTypes = $this->resolveRequestTypes($filters);
 
-        $rows = collect();
+        $paginators = [];
 
-        if (in_array('separation', $requestTypes, true)) {
-            $rows = $rows->concat($this->fetchSeparationRows($store, $filters));
+        foreach ($fetchers as $type => $fetcher) {
+            if (!in_array($type, $requestTypes, true)) {
+                continue;
+            }
+
+            $rows = $fetcher();
+            $rows = $this->applyPostMergeFilters($rows, $filters);
+            $rows = $this->applySorting($rows, $filters);
+
+            $paginators[$type] = $this->paginateCollection($rows, $filters, $type);
         }
 
-        if (in_array('hiring', $requestTypes, true)) {
-            $rows = $rows->concat($this->fetchHiringRows($store, $filters));
-        }
-
-        if (in_array('milestone_gift', $requestTypes, true)) {
-            $rows = $rows->concat($this->fetchMilestoneGiftRows($store, $filters));
-        }
-
-        $rows = $this->applyPostMergeFilters($rows, $filters);
-        $rows = $this->applySorting($rows, $filters);
-
-        return $this->paginateCollection($rows, $filters);
+        return $paginators;
     }
 
     private function fetchSeparationRows(Store $store, array $filters): Collection
@@ -435,10 +440,12 @@ class WorkflowRequestQueryService
             : $sorted->values();
     }
 
-    private function paginateCollection(Collection $rows, array $filters): LengthAwarePaginator
+    private function paginateCollection(Collection $rows, array $filters, string $type): LengthAwarePaginator
     {
-        $perPage = min((int) ($filters['per_page'] ?? 25), 100);
-        $page = max((int) request()->query('page', 1), 1);
+        $pageName = "{$type}_page";
+
+        $perPage = min((int) ($filters["{$type}_per_page"] ?? $filters['per_page'] ?? 25), 100);
+        $page = max((int) request()->query($pageName, $filters['page'] ?? 1), 1);
 
         $items = $rows->forPage($page, $perPage)->values();
 
@@ -450,6 +457,7 @@ class WorkflowRequestQueryService
             [
                 'path' => request()->url(),
                 'query' => request()->query(),
+                'pageName' => $pageName,
             ]
         );
     }
