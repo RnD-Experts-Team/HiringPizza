@@ -34,7 +34,7 @@ class WorkflowRequestIndexRequest extends FormRequest
             'availability_type' => ['sometimes', Rule::in(['weekday', 'weekend', 'open_availability'])],
 
             'milestone_gift_stage' => ['sometimes', Rule::in(['created', 'rating', 'gift_decision', 'final_status', 'closed', 'cancelled'])],
-            'milestone' => ['sometimes', Rule::in(['8_days', '1_month', '2_months', '3_months', '4_months', '5_months', '6_months', '8_months', '1_year', 'other'])],
+            'milestone' => ['sometimes', Rule::in(['8_days', '14_days', '1_month', '2_months', '3_months', '4_months', '5_months', '6_months', '8_months', '1_year', 'other'])],
 
             'employee_id' => ['sometimes', 'integer', 'exists:employees,id'],
             'requested_by_user_id' => ['sometimes', 'integer', 'exists:users,id'],

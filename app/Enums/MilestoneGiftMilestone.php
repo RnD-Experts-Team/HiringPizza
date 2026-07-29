@@ -5,6 +5,7 @@ namespace App\Enums;
 enum MilestoneGiftMilestone: string
 {
     case EightDays = '8_days';
+    case FourteenDays = '14_days';
     case OneMonth = '1_month';
     case TwoMonths = '2_months';
     case ThreeMonths = '3_months';

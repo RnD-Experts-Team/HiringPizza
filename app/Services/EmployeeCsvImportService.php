@@ -731,7 +731,6 @@ class EmployeeCsvImportService
             'resigned' => 'resigned',
             'terminated' => 'terminated',
             'rehired' => 'rehired',
-            'oje' => 'OJE',
             default => throw new RuntimeException("Unsupported status value: '{$value}'."),
         };
     }

@@ -232,7 +232,7 @@ class ExportHiringBernardTempService
 
     private function isHiringStatus(?string $status): bool
     {
-        return in_array($status, ['hired', 'rehired', 'oje'], true);
+        return in_array($status, ['hired', 'rehired'], true);
     }
 
     private function normalizeStatus(mixed $status): ?string
