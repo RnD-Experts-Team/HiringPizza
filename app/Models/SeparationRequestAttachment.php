@@ -15,7 +15,13 @@ class SeparationRequestAttachment extends Model
 
     protected function getAttachmentUrlAttribute(): ?string
     {
-        return $this->file_path ? asset('storage/' . $this->file_path) : null;
+        if (!$this->file_path) {
+            return null;
+        }
+
+        $secure = str_starts_with((string) config('app.url'), 'https://') ? true : null;
+
+        return asset('storage/' . $this->file_path, $secure);
     }
 
     protected function casts(): array

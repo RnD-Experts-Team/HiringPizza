@@ -18,7 +18,13 @@ class EmployeeObsession extends Model
 
     protected function getImageUrlAttribute(): ?string
     {
-        return $this->image_path ? asset('storage/' . $this->image_path) : null;
+        if (!$this->image_path) {
+            return null;
+        }
+
+        $secure = str_starts_with((string) config('app.url'), 'https://') ? true : null;
+
+        return asset('storage/' . $this->image_path, $secure);
     }
 
     protected function casts(): array
