@@ -920,7 +920,7 @@
             "get": {
                 "tags": ["Workflow Requests"],
                 "summary": "List workflow requests across stores (hiring + separation + milestone gift)",
-                "description": "Store-agnostic unified feed. Pass `storeIds[]` to restrict to one or more stores; omit to return requests across all stores. Each item carries a `request_type` field and a matching typed object; the other two are always `null`. All filters from the store-scoped endpoint are supported.",
+                "description": "Store-agnostic feed, returned as three independently paginated groups (`separation`, `hiring`, `milestone_gift`) so a tabbed UI can page through each type without affecting the others. Pass `storeIds[]` to restrict to one or more stores; omit to return requests across all stores. Each item carries a `request_type` field and a matching typed object; the other two are always `null`. All filters from the store-scoped endpoint are supported.",
                 "parameters": [
                     {
                         "name": "storeIds[]",
@@ -1081,17 +1081,55 @@
                     {
                         "name": "per_page",
                         "in": "query",
+                        "description": "Fallback page size applied to any type that doesn't specify its own `{type}_per_page` below.",
                         "schema": { "type": "integer", "minimum": 1, "maximum": 100 }
                     },
                     {
                         "name": "page",
                         "in": "query",
+                        "description": "Fallback page number applied to any type that doesn't specify its own `{type}_page` below.",
                         "schema": { "type": "integer", "minimum": 1 }
+                    },
+                    {
+                        "name": "separation_page",
+                        "in": "query",
+                        "description": "Page number for the separation group. Defaults to `page`.",
+                        "schema": { "type": "integer", "minimum": 1 }
+                    },
+                    {
+                        "name": "separation_per_page",
+                        "in": "query",
+                        "description": "Page size for the separation group. Defaults to `per_page`.",
+                        "schema": { "type": "integer", "minimum": 1, "maximum": 100 }
+                    },
+                    {
+                        "name": "hiring_page",
+                        "in": "query",
+                        "description": "Page number for the hiring group. Defaults to `page`.",
+                        "schema": { "type": "integer", "minimum": 1 }
+                    },
+                    {
+                        "name": "hiring_per_page",
+                        "in": "query",
+                        "description": "Page size for the hiring group. Defaults to `per_page`.",
+                        "schema": { "type": "integer", "minimum": 1, "maximum": 100 }
+                    },
+                    {
+                        "name": "milestone_gift_page",
+                        "in": "query",
+                        "description": "Page number for the milestone_gift group. Defaults to `page`.",
+                        "schema": { "type": "integer", "minimum": 1 }
+                    },
+                    {
+                        "name": "milestone_gift_per_page",
+                        "in": "query",
+                        "description": "Page size for the milestone_gift group. Defaults to `per_page`.",
+                        "schema": { "type": "integer", "minimum": 1, "maximum": 100 }
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "Unified workflow request feed",
+                        "description": "Workflow requests grouped by type, each independently paginated",
                         "content": {
                             "application/json": {
                                 "schema": { "$ref": "#/components/schemas/WorkflowRequestIndexResponse" }
@@ -1105,7 +1143,7 @@
             "get": {
                 "tags": ["Workflow Requests"],
                 "summary": "List store workflow requests (hiring + separation + milestone gift)",
-                "description": "Returns a unified paginated feed across hiring, separation, and milestone gift workflows. Each item contains a `request_type` field (`separation`, `hiring`, or `milestone_gift`) and a matching typed object (`separation_request`, `hiring_request`, or `milestone_gift_request`); the other two are always `null`. For milestone gift requests `workflow_status` mirrors the request `stage` value directly (see `MilestoneGiftStage` enum). Use `request_type=milestone_gift` to filter only gift tickets.",
+                "description": "Returns hiring, separation, and milestone gift workflows as three independently paginated groups (`separation`, `hiring`, `milestone_gift`) so a tabbed UI can page through each type without affecting the others. Each item contains a `request_type` field (`separation`, `hiring`, or `milestone_gift`) and a matching typed object (`separation_request`, `hiring_request`, or `milestone_gift_request`); the other two are always `null`. For milestone gift requests `workflow_status` mirrors the request `stage` value directly (see `MilestoneGiftStage` enum). Use `request_type=milestone_gift` to return only gift tickets.",
                 "parameters": [
                     { "$ref": "#/components/parameters/storeNumber" },
                     {
@@ -1278,6 +1316,7 @@
                     {
                         "name": "per_page",
                         "in": "query",
+                        "description": "Fallback page size applied to any type that doesn't specify its own `{type}_per_page` below.",
                         "schema": {
                             "type": "integer",
                             "minimum": 1,
@@ -1287,90 +1326,162 @@
                     {
                         "name": "page",
                         "in": "query",
+                        "description": "Fallback page number applied to any type that doesn't specify its own `{type}_page` below.",
                         "schema": { "type": "integer", "minimum": 1 }
+                    },
+                    {
+                        "name": "separation_page",
+                        "in": "query",
+                        "description": "Page number for the separation group. Defaults to `page`.",
+                        "schema": { "type": "integer", "minimum": 1 }
+                    },
+                    {
+                        "name": "separation_per_page",
+                        "in": "query",
+                        "description": "Page size for the separation group. Defaults to `per_page`.",
+                        "schema": { "type": "integer", "minimum": 1, "maximum": 100 }
+                    },
+                    {
+                        "name": "hiring_page",
+                        "in": "query",
+                        "description": "Page number for the hiring group. Defaults to `page`.",
+                        "schema": { "type": "integer", "minimum": 1 }
+                    },
+                    {
+                        "name": "hiring_per_page",
+                        "in": "query",
+                        "description": "Page size for the hiring group. Defaults to `per_page`.",
+                        "schema": { "type": "integer", "minimum": 1, "maximum": 100 }
+                    },
+                    {
+                        "name": "milestone_gift_page",
+                        "in": "query",
+                        "description": "Page number for the milestone_gift group. Defaults to `page`.",
+                        "schema": { "type": "integer", "minimum": 1 }
+                    },
+                    {
+                        "name": "milestone_gift_per_page",
+                        "in": "query",
+                        "description": "Page size for the milestone_gift group. Defaults to `per_page`.",
+                        "schema": { "type": "integer", "minimum": 1, "maximum": 100 }
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "Unified workflow request feed",
+                        "description": "Workflow requests grouped by type, each independently paginated",
                         "content": {
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/WorkflowRequestIndexResponse"
                                 },
                                 "example": {
-                                    "current_page": 1,
-                                    "data": [
-                                        {
-                                            "id": 91,
-                                            "request_type": "separation",
-                                            "store_id": 3,
-                                            "requested_by_user_id": 7,
-                                            "requested_at": "2026-04-17T09:30:00.000000Z",
-                                            "workflow_status": "pending",
-                                            "latest_decision": null,
-                                            "separation_request": {
+                                    "separation": {
+                                        "current_page": 1,
+                                        "data": [
+                                            {
                                                 "id": 91,
+                                                "request_type": "separation",
                                                 "store_id": 3,
-                                                "user_id": 7,
-                                                "employee_id": 44,
-                                                "separation_type": "resignation",
-                                                "final_working_day": "2026-04-30",
-                                                "termination_letter": null,
-                                                "termination_reason": null,
-                                                "termination_reason_details": null,
-                                                "resignation_reason": "personal_reasons",
-                                                "resignation_reason_details": null,
-                                                "attachments": [],
-                                                "additional_notes": "Submitted by manager",
-                                                "created_at": "2026-04-17T09:30:00.000000Z",
-                                                "updated_at": "2026-04-17T09:30:00.000000Z"
-                                            },
-                                            "hiring_request": null
-                                        },
-                                        {
-                                            "id": 105,
-                                            "request_type": "hiring",
-                                            "store_id": 3,
-                                            "requested_by_user_id": 11,
-                                            "requested_at": "2026-04-16T10:00:00.000000Z",
-                                            "workflow_status": "completed",
-                                            "latest_decision": {
-                                                "id": 35,
-                                                "decision": "completed",
-                                                "decided_by_user_id": 11,
-                                                "decided_at": "2026-04-17T11:15:00.000000Z",
-                                                "completed_at": "2026-04-17T11:15:00.000000Z",
-                                                "number_hired": 2,
-                                                "employee_ids": [88, 89]
-                                            },
-                                            "separation_request": null,
-                                            "hiring_request": {
-                                                "id": 105,
-                                                "store_id": 3,
-                                                "user_id": 11,
-                                                "employees_needed": 2,
-                                                "desired_start_date": "2026-05-05",
-                                                "final_notes": "Need AM coverage",
-                                                "created_at": "2026-04-16T10:00:00.000000Z",
-                                                "updated_at": "2026-04-16T10:00:00.000000Z",
-                                                "candidates": [],
-                                                "positions": [],
-                                                "decisions": []
+                                                "requested_by_user_id": 7,
+                                                "requested_at": "2026-04-17T09:30:00.000000Z",
+                                                "workflow_status": "pending",
+                                                "latest_decision": null,
+                                                "separation_request": {
+                                                    "id": 91,
+                                                    "store_id": 3,
+                                                    "user_id": 7,
+                                                    "employee_id": 44,
+                                                    "separation_type": "resignation",
+                                                    "final_working_day": "2026-04-30",
+                                                    "termination_letter": null,
+                                                    "termination_reason": null,
+                                                    "termination_reason_details": null,
+                                                    "resignation_reason": "personal_reasons",
+                                                    "resignation_reason_details": null,
+                                                    "attachments": [],
+                                                    "additional_notes": "Submitted by manager",
+                                                    "created_at": "2026-04-17T09:30:00.000000Z",
+                                                    "updated_at": "2026-04-17T09:30:00.000000Z"
+                                                },
+                                                "hiring_request": null,
+                                                "milestone_gift_request": null
                                             }
-                                        }
-                                    ],
-                                    "first_page_url": "http://localhost/api/v1/stores/NY001/requests?page=1",
-                                    "from": 1,
-                                    "last_page": 1,
-                                    "last_page_url": "http://localhost/api/v1/stores/NY001/requests?page=1",
-                                    "links": [],
-                                    "next_page_url": null,
-                                    "path": "http://localhost/api/v1/stores/NY001/requests",
-                                    "per_page": 25,
-                                    "prev_page_url": null,
-                                    "to": 2,
-                                    "total": 2
+                                        ],
+                                        "first_page_url": "http://localhost/api/v1/stores/NY001/requests?separation_page=1",
+                                        "from": 1,
+                                        "last_page": 1,
+                                        "last_page_url": "http://localhost/api/v1/stores/NY001/requests?separation_page=1",
+                                        "links": [],
+                                        "next_page_url": null,
+                                        "path": "http://localhost/api/v1/stores/NY001/requests",
+                                        "per_page": 25,
+                                        "prev_page_url": null,
+                                        "to": 1,
+                                        "total": 1
+                                    },
+                                    "hiring": {
+                                        "current_page": 1,
+                                        "data": [
+                                            {
+                                                "id": 105,
+                                                "request_type": "hiring",
+                                                "store_id": 3,
+                                                "requested_by_user_id": 11,
+                                                "requested_at": "2026-04-16T10:00:00.000000Z",
+                                                "workflow_status": "completed",
+                                                "latest_decision": {
+                                                    "id": 35,
+                                                    "decision": "completed",
+                                                    "decided_by_user_id": 11,
+                                                    "decided_at": "2026-04-17T11:15:00.000000Z",
+                                                    "completed_at": "2026-04-17T11:15:00.000000Z",
+                                                    "number_hired": 2,
+                                                    "employee_ids": [88, 89]
+                                                },
+                                                "separation_request": null,
+                                                "hiring_request": {
+                                                    "id": 105,
+                                                    "store_id": 3,
+                                                    "user_id": 11,
+                                                    "employees_needed": 2,
+                                                    "desired_start_date": "2026-05-05",
+                                                    "final_notes": "Need AM coverage",
+                                                    "created_at": "2026-04-16T10:00:00.000000Z",
+                                                    "updated_at": "2026-04-16T10:00:00.000000Z",
+                                                    "candidates": [],
+                                                    "positions": [],
+                                                    "decisions": []
+                                                },
+                                                "milestone_gift_request": null
+                                            }
+                                        ],
+                                        "first_page_url": "http://localhost/api/v1/stores/NY001/requests?hiring_page=1",
+                                        "from": 1,
+                                        "last_page": 1,
+                                        "last_page_url": "http://localhost/api/v1/stores/NY001/requests?hiring_page=1",
+                                        "links": [],
+                                        "next_page_url": null,
+                                        "path": "http://localhost/api/v1/stores/NY001/requests",
+                                        "per_page": 25,
+                                        "prev_page_url": null,
+                                        "to": 1,
+                                        "total": 1
+                                    },
+                                    "milestone_gift": {
+                                        "current_page": 1,
+                                        "data": [],
+                                        "first_page_url": "http://localhost/api/v1/stores/NY001/requests?milestone_gift_page=1",
+                                        "from": null,
+                                        "last_page": 1,
+                                        "last_page_url": "http://localhost/api/v1/stores/NY001/requests?milestone_gift_page=1",
+                                        "links": [],
+                                        "next_page_url": null,
+                                        "path": "http://localhost/api/v1/stores/NY001/requests",
+                                        "per_page": 25,
+                                        "prev_page_url": null,
+                                        "to": null,
+                                        "total": 0
+                                    }
                                 }
                             }
                         }
@@ -3102,8 +3213,9 @@
                     }
                 }
             },
-            "WorkflowRequestIndexResponse": {
+            "WorkflowRequestTypePage": {
                 "type": "object",
+                "description": "A standard Laravel length-aware paginator page, scoped to a single request type.",
                 "properties": {
                     "current_page": { "type": "integer" },
                     "data": {
@@ -3123,6 +3235,15 @@
                     "prev_page_url": { "type": ["string", "null"] },
                     "to": { "type": ["integer", "null"] },
                     "total": { "type": "integer" }
+                }
+            },
+            "WorkflowRequestIndexResponse": {
+                "type": "object",
+                "description": "Workflow requests grouped by type. Each group is paginated independently via `{type}_page`/`{type}_per_page` query params, so paging one tab never shifts the data shown in another. A group is present only when its type wasn't excluded by `request_type`/`request_types[]`.",
+                "properties": {
+                    "separation": { "$ref": "#/components/schemas/WorkflowRequestTypePage" },
+                    "hiring": { "$ref": "#/components/schemas/WorkflowRequestTypePage" },
+                    "milestone_gift": { "$ref": "#/components/schemas/WorkflowRequestTypePage" }
                 }
             },
             "SeparationType": {

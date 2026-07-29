@@ -25,16 +25,16 @@ class WorkflowRequestController extends Controller
             ->map(fn(string $num) => $this->workflowService->resolveStoreByNumber($num)->id)
             ->all();
 
-        $requests = $this->queryService->indexGlobal($storeIds, $filters);
+        $requestsByType = $this->queryService->indexGlobal($storeIds, $filters);
 
-        return response()->json($requests);
+        return response()->json($requestsByType);
     }
 
     public function index(WorkflowRequestIndexRequest $request, string $storeNumber): JsonResponse
     {
         $store = $this->workflowService->resolveStoreByNumber($storeNumber);
-        $requests = $this->queryService->index($store, $request->validated());
+        $requestsByType = $this->queryService->index($store, $request->validated());
 
-        return response()->json($requests);
+        return response()->json($requestsByType);
     }
 }
