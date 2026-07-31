@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\V1\EmployeeWorkflowController;
 use App\Http\Controllers\Api\V1\EmployeeMetricController;
+use App\Http\Controllers\Api\V1\LaborController;
 use App\Http\Controllers\Api\V1\ReferenceCatalogController;
 use App\Http\Controllers\Api\V1\SeparationRequestController;
 use App\Http\Controllers\Api\V1\HiringRequestController;
@@ -117,6 +118,13 @@ Route::prefix('v1')->middleware('auth.token.store')->group(function (): void {
             Route::get('manager-dashboard/{date}', [ManagerDashboardController::class, 'show'])
                 ->where(['date' => '[0-9]{4}-[0-9]{2}-[0-9]{2}'])
                 ->name('api.v1.stores.manager-dashboard.show');
+
+            // Labor report: store-wide headcount/tenure/turnover/labor snapshot for the
+            // business week containing {date}, plus trailing-week trend context.
+            // Override the trend window with ?trend_weeks= (default 6, max 12).
+            Route::get('labor/{date}', [LaborController::class, 'show'])
+                ->where(['date' => '[0-9]{4}-[0-9]{2}-[0-9]{2}'])
+                ->name('api.v1.stores.labor.show');
 
             // Hiring Request Workflow
             Route::post('hiring-requests', [HiringRequestController::class, 'store'])
