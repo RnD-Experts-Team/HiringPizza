@@ -206,7 +206,7 @@ class LaborReportService
                 'employee_id' => $employee->id,
                 'name' => $this->fullName($employee),
                 'hire_date' => $start?->toDateString(),
-                'tenure_days' => $start !== null ? $weekEnd->diffInDays($start) : null,
+                'tenure_days' => $start !== null ? abs($weekEnd->diffInDays($start)) : null,
             ];
         })->filter(fn (array $row) => $row['tenure_days'] !== null)->values();
 
@@ -340,7 +340,7 @@ class LaborReportService
             'effective_date' => $separationDate->toDateString(),
             'reason' => $reason,
             'reason_matched' => $reason !== null,
-            'tenure_days' => $stintStart !== null ? $separationDate->diffInDays($stintStart) : null,
+            'tenure_days' => $stintStart !== null ? abs($separationDate->diffInDays($stintStart)) : null,
             'impact_snapshot' => $this->buildImpactSnapshot($event->employee_id, $separationDate, $stintStart, $store),
         ];
     }
@@ -356,7 +356,7 @@ class LaborReportService
         ?CarbonInterface $stintStart,
         Store $store
     ): array {
-        $availableDays = $stintStart !== null ? $separationDate->diffInDays($stintStart) : self::IMPACT_LOOKBACK_DAYS;
+        $availableDays = $stintStart !== null ? abs($separationDate->diffInDays($stintStart)) : self::IMPACT_LOOKBACK_DAYS;
         $lookbackDays = max(1, min(self::IMPACT_LOOKBACK_DAYS, $availableDays));
 
         $windowStart = $separationDate->subDays($lookbackDays)->toDateString();
@@ -662,7 +662,7 @@ class LaborReportService
                     ? 'inactive'
                     : 'active',
                 'hire_date' => $stintStart?->toDateString(),
-                'tenure_days' => $stintStart !== null ? $weekEnd->diffInDays($stintStart) : null,
+                'tenure_days' => $stintStart !== null ? abs($weekEnd->diffInDays($stintStart)) : null,
                 'base_pay' => $payRow?->base_pay,
                 'performance_pay' => $payRow?->performance_pay,
                 'metrics' => $sparse,
