@@ -510,9 +510,27 @@ class LaborReportService
         return $result;
     }
 
+    /**
+     * Deliberately not Collection::only() — EmployeeMetricColumn::query()->get()
+     * returns an Eloquent Collection, whose only() filters by each model's
+     * primary key (getKey()), not by the collection's array keys. Since
+     * $columnsByKey is keyed by the string `key` column but each item's
+     * primary key is still its integer id, only($keys) would silently compare
+     * ids against key strings and always return empty.
+     */
     private function resolveColumnIds(array $keys): array
     {
-        return $this->columnsByKey->only($keys)->pluck('id')->all();
+        $ids = [];
+
+        foreach ($keys as $key) {
+            $column = $this->columnsByKey->get($key);
+
+            if ($column !== null) {
+                $ids[] = $column->id;
+            }
+        }
+
+        return $ids;
     }
 
     // -------------------------------------------------------------------------
