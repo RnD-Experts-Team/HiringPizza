@@ -22,6 +22,7 @@ use App\Models\Store;
 use App\Services\HiringEvents\HiringEventFactory;
 use App\Services\HiringEvents\HiringOutboxService;
 use App\Services\HiringEvents\ModelChangeSet;
+use App\Services\Humanity\HumanityEmployeeSyncService;
 use DateTimeInterface;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -71,12 +72,51 @@ class EmployeeWorkflowService
 
             $loadedEmployee = $this->loadEmployee($employee->fresh());
 
+            // Push to Humanity BEFORE emitting the event. The payload can only
+            // be built now, because the scheduling-relevant fields (email,
+            // wage, position, store, hire date) live in the child rows the
+            // sync* calls above just wrote.
+            //
+            // A failure throws, which rolls this whole transaction back — no
+            // orphan employee, no event, nothing for anyone to reconcile.
+            $this->pushToHumanity($loadedEmployee, $store);
+            $loadedEmployee = $this->loadEmployee($employee->fresh());
+
             $this->recordEvent('hiring.v1.employee.created', [
                 'employee' => $this->snapshotEmployee($loadedEmployee),
                 'store_number' => $store->store_number,
             ], $request);
 
             return $loadedEmployee;
+        });
+    }
+
+    /**
+     * Humanity is the scheduling source of truth, and an employee who is not
+     * there cannot be scheduled — so the local write is not allowed to succeed
+     * without it.
+     */
+    private function pushToHumanity(Employee $employee, Store $store): void
+    {
+        app(HumanityEmployeeSyncService::class)->upsert($employee, $store);
+    }
+
+    /**
+     * Delete a stored file only once the surrounding transaction commits.
+     *
+     * The sync* helpers run inside DB::transaction, and the Humanity push can
+     * now roll that transaction back. A rollback restores the database rows but
+     * cannot un-delete a file, so deleting eagerly would leave an employee
+     * whose attachments and photo have silently vanished.
+     */
+    private function deleteFileAfterCommit(?string $path): void
+    {
+        if (blank($path)) {
+            return;
+        }
+
+        DB::afterCommit(function () use ($path): void {
+            Storage::disk('public')->delete($path);
         });
     }
 
@@ -153,6 +193,11 @@ class EmployeeWorkflowService
             ]);
 
             $loadedEmployee = $this->loadEmployee($employee->fresh());
+
+            // Same ordering as create(): Humanity first, rollback on failure.
+            $this->pushToHumanity($loadedEmployee, $store);
+            $loadedEmployee = $this->loadEmployee($employee->fresh());
+
             $afterSnapshot = $this->snapshotEmployee($loadedEmployee);
 
             $changedFields = ModelChangeSet::fromArrays(
@@ -197,6 +242,11 @@ class EmployeeWorkflowService
             ]);
 
             $loadedEmployee = $this->loadEmployee($employee->fresh());
+
+            // Same ordering as create(): Humanity first, rollback on failure.
+            $this->pushToHumanity($loadedEmployee, $store);
+            $loadedEmployee = $this->loadEmployee($employee->fresh());
+
             $afterSnapshot = $this->snapshotEmployee($loadedEmployee);
 
             $changedFields = ModelChangeSet::fromArrays(
@@ -468,7 +518,7 @@ class EmployeeWorkflowService
 
         if ($row === null) {
             if ($existingObsession?->image_path) {
-                Storage::disk('public')->delete($existingObsession->image_path);
+                $this->deleteFileAfterCommit($existingObsession->image_path);
             }
 
             EmployeeObsession::query()->where('employee_id', $employee->id)->delete();
@@ -480,7 +530,7 @@ class EmployeeWorkflowService
 
         if (isset($row['image']) && $row['image'] instanceof UploadedFile) {
             if ($existingObsession?->image_path) {
-                Storage::disk('public')->delete($existingObsession->image_path);
+                $this->deleteFileAfterCommit($existingObsession->image_path);
             }
 
             $imagePath = $row['image']->store('employee-obsessions/' . $employee->id, 'public');
@@ -531,7 +581,7 @@ class EmployeeWorkflowService
 
         foreach ($existingAttachments as $attachment) {
             if ($attachment->file_path) {
-                Storage::disk('public')->delete($attachment->file_path);
+                $this->deleteFileAfterCommit($attachment->file_path);
             }
         }
 

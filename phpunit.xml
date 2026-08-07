@@ -27,7 +27,10 @@
         <env name="DB_DATABASE" value=":memory:"/>
         <env name="DB_URL" value=""/>
         <env name="MAIL_MAILER" value="array"/>
-        <env name="QUEUE_CONNECTION" value="sync"/>
+        <!-- NOT sync: PublishOutboxEventJob does real NATS I/O, so a sync queue
+             makes every write test try to reach a broker. The outbox row is the
+             assertion target. -->
+        <env name="QUEUE_CONNECTION" value="null"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>

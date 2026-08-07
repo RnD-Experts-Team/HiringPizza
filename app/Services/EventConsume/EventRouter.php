@@ -16,6 +16,10 @@ class EventRouter
             ? 'auth.testing.v1'
             : 'auth.v1';
 
+        $operationsPrefix = $devMode
+            ? 'operations.testing.v1'
+            : 'operations.v1';
+
 
         $this->map = [
             // USERS
@@ -27,6 +31,10 @@ class EventRouter
             "{$authPrefix}.store.created" => \App\Services\EventConsume\Handlers\StoreCreatedHandler::class,
             "{$authPrefix}.store.updated" => \App\Services\EventConsume\Handlers\StoreUpdatedHandler::class,
             "{$authPrefix}.store.deleted" => \App\Services\EventConsume\Handlers\StoreDeletedHandler::class,
+
+            // OPERATIONS — we are the only writer of employees into Humanity,
+            // so scheduling asks us to push one it cannot schedule.
+            "{$operationsPrefix}.employee.humanity_sync_requested" => \App\Services\EventConsume\Handlers\EmployeeHumanitySyncRequestedHandler::class,
         ];
     }
     public function getResolvedMap(): array

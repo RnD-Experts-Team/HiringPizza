@@ -35,7 +35,10 @@ class JetStreamConsumer
      */
     private const SUBJECT_ALLOW_PREFIXES = [
         'auth.v1.',
-        'auth.testing.v1.'
+        'auth.testing.v1.',
+        // OperationsPizza's employee-sync requests.
+        'operations.v1.',
+        'operations.testing.v1.',
     ];
 
     private ?Client $client = null;

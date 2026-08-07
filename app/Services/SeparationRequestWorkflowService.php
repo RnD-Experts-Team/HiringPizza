@@ -86,6 +86,14 @@ class SeparationRequestWorkflowService
                 ]);
 
                 $loadedEmployee = $this->loadEmployee($employee->fresh());
+
+                // The fourth employee write path, and the easiest to miss.
+                // Without this a terminated employee stays active in Humanity
+                // and remains schedulable after they have left.
+                app(\App\Services\Humanity\HumanityEmployeeSyncService::class)
+                    ->upsert($loadedEmployee);
+
+                $loadedEmployee = $this->loadEmployee($employee->fresh());
                 $afterSnapshot = $this->snapshotEmployee($loadedEmployee);
 
                 $changedFields = ModelChangeSet::fromArrays(

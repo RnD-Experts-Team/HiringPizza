@@ -14,6 +14,10 @@ $notificationsSubject = $devMode
     ? 'notifications.testing.v1.>'
     : 'notifications.v1.>';
 
+$operationsSubject = $devMode
+    ? 'operations.testing.v1.>'
+    : 'operations.v1.>';
+
 return [
     'dev_mode' => $devMode,
     'host' => env('NATS_HOST', '127.0.0.1'),
@@ -50,12 +54,20 @@ return [
             'filter_subject' => $authSubject, // match your stream subjects
         ],
 
-        // Example additional stream later:
-        // [
-        //   'name' => env('NATS_PROJECT_STREAM', 'PROJECT_EVENTS'),
-        //   'durable' => env('NATS_PROJECT_DURABLE', 'HIRING_PROJECT_CONSUMER'),
-        //   'filter_subject' => 'project.v1.>',
-        // ],
+        /**
+         * OperationsPizza asks us to push an employee into Humanity when it
+         * meets one with no link. We own employee writes, so it cannot do this
+         * itself — see EmployeeHumanitySyncRequestedHandler.
+         */
+        [
+            'name' => $devMode
+                ? env('NATS_OPERATIONS_STREAM', 'OPERATIONS_TESTING_EVENTS')
+                : env('NATS_OPERATIONS_STREAM', 'OPERATIONS_EVENTS'),
+            'durable' => $devMode
+                ? env('NATS_OPERATIONS_DURABLE', 'HIRING_OPERATIONS_TESTING_CONSUMER')
+                : env('NATS_OPERATIONS_DURABLE', 'HIRING_OPERATIONS_CONSUMER'),
+            'filter_subject' => $operationsSubject,
+        ],
     ],
 
     'pull' => [
