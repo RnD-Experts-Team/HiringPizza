@@ -39,6 +39,29 @@ class BackfillHumanityEmployeeIdsCommand extends Command
     ): int {
         $apply = (bool) $this->option('apply');
 
+        // Hard stop. This command's whole job is to stamp OUR employee id into
+        // Humanity's `eid`. TCP's connector matches employees between
+        // TimeClock Plus and Humanity on an external id, and `eid` is
+        // Humanity's standard one — so if TCP uses it, applying this would
+        // overwrite the matching keys on a live roster and break TCP's
+        // production sync. Reporting is still allowed; writing is not.
+        if (config('humanity.tcp_connector_active')) {
+            $this->error('TCP\'s TimeClock Plus <-> Humanity connector is marked active.');
+            $this->newLine();
+            $this->line('TCP owns employee records and re-syncs them every 5 minutes, matching on an');
+            $this->line('external id. Humanity\'s standard external id field is `eid` — exactly what');
+            $this->line('this command writes. Applying it could break TCP\'s live sync.');
+            $this->newLine();
+            $this->line('Before this can run, confirm which field TCP matches on:');
+            $this->line('  php artisan humanity:inspect-employees');
+            $this->newLine();
+            $this->line('If `eid` is populated by TCP, employees must be pushed to TCP Manager+');
+            $this->line('instead, and this command retired. If TCP matches on something else and');
+            $this->line('`eid` is genuinely free, set TCP_CONNECTOR_ACTIVE=false to re-enable.');
+
+            return self::FAILURE;
+        }
+
         $this->info($apply ? 'APPLYING matches.' : 'Dry run — nothing will be written. Use --apply once the report looks right.');
 
         $remote = collect($client->listEmployees(includeInactive: true));

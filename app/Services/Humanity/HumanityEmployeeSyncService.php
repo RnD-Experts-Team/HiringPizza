@@ -28,8 +28,22 @@ class HumanityEmployeeSyncService
     ) {
     }
 
+    /**
+     * TCP's connector owns the employee record when it is active, so we must
+     * not write one. Checked before writes_enabled so that flipping the write
+     * flag alone can never re-open this path by accident.
+     */
+    public function blockedByTcpConnector(): bool
+    {
+        return (bool) config('humanity.tcp_connector_active');
+    }
+
     public function enabled(): bool
     {
+        if ($this->blockedByTcpConnector()) {
+            return false;
+        }
+
         return (bool) config('humanity.writes_enabled');
     }
 
@@ -41,9 +55,22 @@ class HumanityEmployeeSyncService
      */
     public function upsert(Employee $employee, ?Store $store = null): ?string
     {
+        if ($this->blockedByTcpConnector()) {
+            // TCP's connector owns the employee record and re-syncs it every 5
+            // minutes. Writing here would fight it, and could overwrite the
+            // external id it matches on. Not an error — the employee is still
+            // created locally and reaches Humanity via TCP.
+            Log::info('Humanity employee push skipped: TCP connector owns employee data', [
+                'employee_id' => $employee->id,
+                'topology' => 'HiringPizza -> TCP Manager+ -> (TCP connector) -> Humanity',
+            ]);
+
+            return $this->existingHumanityId($employee);
+        }
+
         if (!$this->enabled()) {
-            // Not an error: the flag is how we keep production safe until the
-            // eid backfill has matched the existing hand-created roster.
+            // The flag that keeps production safe until the roster has been
+            // matched to the existing hand-created records.
             Log::info('Humanity employee push skipped (writes disabled)', ['employee_id' => $employee->id]);
 
             return $this->existingHumanityId($employee);

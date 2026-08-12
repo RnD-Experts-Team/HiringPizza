@@ -72,14 +72,14 @@ class EmployeeWorkflowService
 
             $loadedEmployee = $this->loadEmployee($employee->fresh());
 
-            // Push to Humanity BEFORE emitting the event. The payload can only
+            // Push to TCP (and Humanity, if its gate is open) BEFORE emitting the event. The payload can only
             // be built now, because the scheduling-relevant fields (email,
             // wage, position, store, hire date) live in the child rows the
             // sync* calls above just wrote.
             //
             // A failure throws, which rolls this whole transaction back — no
             // orphan employee, no event, nothing for anyone to reconcile.
-            $this->pushToHumanity($loadedEmployee, $store);
+            $this->pushToExternalSystems($loadedEmployee, $store);
             $loadedEmployee = $this->loadEmployee($employee->fresh());
 
             $this->recordEvent('hiring.v1.employee.created', [
@@ -92,12 +92,26 @@ class EmployeeWorkflowService
     }
 
     /**
-     * Humanity is the scheduling source of truth, and an employee who is not
-     * there cannot be scheduled — so the local write is not allowed to succeed
-     * without it.
+     * Push the employee to the external systems that must know about them.
+     *
+     * TCP Manager+ is the system of record for employees, and its own connector
+     * carries them into Humanity every 5 minutes:
+     *
+     *     HiringPizza -> TCP Manager+ -> (TCP connector) -> Humanity
+     *
+     * An employee who is not in TCP cannot clock in and cannot be scheduled, so
+     * the local write is not allowed to succeed without it. A throw here rolls
+     * the whole transaction back.
+     *
+     * The Humanity call is retained but gated OFF by TCP_CONNECTOR_ACTIVE — it
+     * is only correct when TCP's own connector is not running, and running both
+     * would make us a second writer on the same Humanity records.
      */
-    private function pushToHumanity(Employee $employee, Store $store): void
+    private function pushToExternalSystems(Employee $employee, Store $store): void
     {
+        app(TcpEmployeeSyncService::class)->upsert($employee, $store);
+
+        // No-op while TCP's connector owns Humanity's employee records.
         app(HumanityEmployeeSyncService::class)->upsert($employee, $store);
     }
 
@@ -194,8 +208,8 @@ class EmployeeWorkflowService
 
             $loadedEmployee = $this->loadEmployee($employee->fresh());
 
-            // Same ordering as create(): Humanity first, rollback on failure.
-            $this->pushToHumanity($loadedEmployee, $store);
+            // Same ordering as create(): external systems first, rollback on failure.
+            $this->pushToExternalSystems($loadedEmployee, $store);
             $loadedEmployee = $this->loadEmployee($employee->fresh());
 
             $afterSnapshot = $this->snapshotEmployee($loadedEmployee);
@@ -243,8 +257,8 @@ class EmployeeWorkflowService
 
             $loadedEmployee = $this->loadEmployee($employee->fresh());
 
-            // Same ordering as create(): Humanity first, rollback on failure.
-            $this->pushToHumanity($loadedEmployee, $store);
+            // Same ordering as create(): external systems first, rollback on failure.
+            $this->pushToExternalSystems($loadedEmployee, $store);
             $loadedEmployee = $this->loadEmployee($employee->fresh());
 
             $afterSnapshot = $this->snapshotEmployee($loadedEmployee);

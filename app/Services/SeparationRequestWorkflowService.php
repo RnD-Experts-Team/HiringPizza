@@ -88,8 +88,14 @@ class SeparationRequestWorkflowService
                 $loadedEmployee = $this->loadEmployee($employee->fresh());
 
                 // The fourth employee write path, and the easiest to miss.
-                // Without this a terminated employee stays active in Humanity
-                // and remains schedulable after they have left.
+                // The fourth employee write path, and the easiest to miss.
+                // Without it a terminated employee keeps a live TCP record —
+                // still able to clock in, and still propagated to Humanity as
+                // schedulable by TCP's connector.
+                app(\App\Services\Tcp\TcpEmployeeSyncService::class)
+                    ->upsert($loadedEmployee);
+
+                // No-op while TCP's connector owns Humanity's employee records.
                 app(\App\Services\Humanity\HumanityEmployeeSyncService::class)
                     ->upsert($loadedEmployee);
 

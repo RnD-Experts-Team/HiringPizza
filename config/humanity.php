@@ -3,12 +3,37 @@
 return [
     /*
      |--------------------------------------------------------------------------
+     | TCP's native TimeClock Plus <-> Humanity connector
+     |--------------------------------------------------------------------------
+     | TCP ships its own connector between TimeClock Plus (Manager+) and
+     | Humanity. It runs every 5 minutes, and TimeClock Plus is the system of
+     | record for employee profiles, leave, skills, locations/departments and
+     | job codes; Humanity owns only the schedule.
+     |
+     | When it is active, writing employees into Humanity from here makes us a
+     | SECOND writer competing with TCP on a 5-minute loop — the exact
+     | duplicate-people failure the `eid` scheme exists to prevent, except the
+     | other writer is TCP's and cannot be coordinated with.
+     |
+     | Worse: TCP's connector matches employees between the two systems using an
+     | external id field, and Humanity's standard one is `eid` — precisely what
+     | HumanityEmployeeMapper and humanity:backfill-employee-ids stamp with OUR
+     | employee id. Overwriting it would break TCP's production sync.
+     |
+     | Defaults to TRUE because true is the SAFE value: it blocks the employee
+     | push and the backfill. Only set it false once you have confirmed the
+     | connector is genuinely off for this account.
+     |
+     | The correct topology while it is on:
+     |     HiringPizza -> TCP Manager+ -> (TCP connector) -> Humanity
+     */
+    'tcp_connector_active' => (bool) env('TCP_CONNECTOR_ACTIVE', true),
+
+    /*
+     |--------------------------------------------------------------------------
      | TCP Humanity — employee push
      |--------------------------------------------------------------------------
-     | HiringPizza is the ONLY writer of employees into Humanity. OperationsPizza
-     | asks over NATS when it meets an unlinked employee; it never writes staff
-     | itself, because two writers to one external system is how duplicate
-     | people get created.
+     | Only reachable when tcp_connector_active is false. See above.
      */
     'driver' => env('HUMANITY_DRIVER', 'fake'),
 

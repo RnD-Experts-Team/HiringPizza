@@ -32,6 +32,9 @@ class EmployeeHumanityPushTest extends TestCase
             'humanity.driver' => 'fake',
             'humanity.environment' => 'sandbox',
             'humanity.writes_enabled' => true,
+            // These tests cover the direct push, which only applies when TCP's
+            // own connector is NOT the one owning employee records.
+            'humanity.tcp_connector_active' => false,
             'nats.dev_mode' => false,
         ]);
 
@@ -168,6 +171,37 @@ class EmployeeHumanityPushTest extends TestCase
 
         // Without this path a terminated employee stays schedulable.
         $this->assertSame(0, array_values($this->humanity->employees)[0]['status']);
+    }
+
+    /**
+     * TCP's connector re-syncs employees into Humanity every 5 minutes and
+     * matches them on an external id. Writing here would compete with it, so
+     * this check sits BEFORE writes_enabled — flipping the write flag alone
+     * must never re-open the path.
+     */
+    public function test_the_push_is_blocked_while_tcps_connector_owns_employees(): void
+    {
+        config([
+            'humanity.tcp_connector_active' => true,
+            'humanity.writes_enabled' => true, // deliberately on; must not matter
+        ]);
+
+        $employee = app(EmployeeWorkflowService::class)->create($this->store, $this->payload());
+
+        // The employee is still created locally and still emits its event —
+        // it reaches Humanity via TCP, not via us.
+        $this->assertSame(1, Employee::count());
+        $this->assertSame(1, \App\Models\HiringOutboxEvent::count());
+        $this->assertCount(0, $this->humanity->employees);
+    }
+
+    public function test_the_tcp_block_defaults_to_on(): void
+    {
+        // True is the safe value: the config default must protect a deployment
+        // that has never heard of this flag.
+        $this->assertTrue(
+            (bool) (require base_path('config/humanity.php'))['tcp_connector_active']
+        );
     }
 
     public function test_writes_are_refused_while_the_flag_is_off(): void
