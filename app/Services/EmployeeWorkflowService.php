@@ -301,7 +301,12 @@ class EmployeeWorkflowService
         }
     }
 
-    private function loadEmployee(Employee $employee): Employee
+    /**
+     * Public because `hiring:republish-employees` builds the same snapshot for
+     * its backfill events. This eager-load list IS the wire shape consumed by
+     * OperationsPizza, so there must be exactly one copy of it.
+     */
+    public function loadEmployee(Employee $employee): Employee
     {
         $employee->load([
             'statusHistories.store',
@@ -640,7 +645,11 @@ class EmployeeWorkflowService
         PublishOutboxEventJob::dispatch($row->id);
     }
 
-    private function snapshotEmployee(Employee $employee): array
+    /**
+     * Public for the same reason as loadEmployee(): the republish backfill must
+     * emit a byte-identical payload to a real `employee.created`.
+     */
+    public function snapshotEmployee(Employee $employee): array
     {
         return $employee->toArray();
     }
