@@ -6,8 +6,9 @@ namespace App\Services\Tcp;
  * In-memory TCP double. Default driver, so the employee push can be built and
  * verified before credentials exist.
  *
- * Enforces the one rule that matters: `employeeId` is client-supplied and must
- * be unique, so a duplicate create fails here exactly as it would in TCP.
+ * Models TCP's id semantics: `employeeId` is TCP-ASSIGNED when absent (the
+ * flow we use — the live roster has native ids our auto-increment would
+ * collide with), and must be unique when a caller does supply one.
  */
 class FakeTcpEmployeeClient implements TcpEmployeeClientInterface
 {
@@ -19,6 +20,9 @@ class FakeTcpEmployeeClient implements TcpEmployeeClientInterface
 
     /** @var array<int, array{op:string, args:array}> */
     public array $calls = [];
+
+    /** Mimics TCP's native id space, far from our auto-increment range. */
+    private int $nextEmployeeId = 9000001;
 
     private array $failures = [];
 
@@ -36,9 +40,22 @@ class FakeTcpEmployeeClient implements TcpEmployeeClientInterface
         ], $attributes);
     }
 
-    public function seedJobCode(string $id, string $name = 'Default'): void
+    /**
+     * Real per-store codes look like description "Crew Member - 3795-01" plus
+     * a "Restaurant Id" custom field carrying the store_number.
+     */
+    public function seedJobCode(string $id, string $description = 'Default', ?string $storeNumber = null, bool $clockable = true): void
     {
-        $this->jobCodes[] = ['jobCodeId' => $id, 'name' => $name];
+        $customFields = $storeNumber === null
+            ? []
+            : [['description' => 'Restaurant Id', 'value' => $storeNumber]];
+
+        $this->jobCodes[] = [
+            'jobCodeId' => (int) $id,
+            'description' => $description,
+            'clockable' => $clockable,
+            'customFields' => $customFields,
+        ];
     }
 
     public function getEmployee(string $employeeId): ?array
@@ -63,16 +80,16 @@ class FakeTcpEmployeeClient implements TcpEmployeeClientInterface
         $employeeId = (string) ($payload['employeeId'] ?? '');
 
         if ($employeeId === '') {
-            throw new TcpException('TCP create employee failed: employeeId is required and client-supplied.');
-        }
-
-        if (isset($this->employees[$employeeId])) {
+            // TCP's documented behaviour: a null employeeId auto-generates
+            // the next available id.
+            $employeeId = (string) $this->nextEmployeeId++;
+        } elseif (isset($this->employees[$employeeId])) {
             throw new TcpException("TCP create employee failed: employeeId {$employeeId} already exists.");
         }
 
         $this->calls[] = ['op' => 'createEmployee', 'args' => ['employeeId' => $employeeId]];
 
-        return $this->employees[$employeeId] = $payload;
+        return $this->employees[$employeeId] = ['employeeId' => $employeeId] + $payload;
     }
 
     public function updateEmployee(string $employeeId, array $payload): array

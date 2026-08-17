@@ -21,13 +21,14 @@ class TcpEmployeeMapper
     private const ACTIVE_STATUSES = ['hired', 'rehired'];
 
     /**
-     * @param  array<string, string>  $jobCodeByPositionLabel  our position label -> TCP jobCodeId
+     * @param  array<int, array{id:string, description:string, store_number:?string, clockable:bool}>  $jobCodeCatalog
+     *         normalized TCP job codes, from TcpEmployeeSyncService::jobCodeCatalog()
      */
     public function toPayload(
         Employee $employee,
         ?Store $store = null,
         bool $forCreate = true,
-        array $jobCodeByPositionLabel = [],
+        array $jobCodeCatalog = [],
     ): array {
         $payload = [
             'firstName' => $employee->first_name,
@@ -35,27 +36,24 @@ class TcpEmployeeMapper
         ];
 
         if ($forCreate) {
-            // employeeId is CLIENT-SUPPLIED — this is the whole basis of an
-            // idempotent push, and it keeps one identity through TCP's own
-            // connector all the way into Humanity.
-            if (config('tcp.use_our_employee_id')) {
-                $payload['employeeId'] = (int) $employee->id;
-            }
-
+            // employeeId is deliberately ABSENT: TCP then assigns the next
+            // available id. The live TCP roster predates us with its own native
+            // ids (5896-style), so supplying our auto-increment id would sooner
+            // or later collide with a real person's record.
             $hireDate = $this->latestHireDate($employee);
 
             // TCP requires hireDate and defaultJobCode on create.
             $payload['hireDate'] = $hireDate ?? now()->toDateString();
 
-            $jobCode = $this->defaultJobCode($employee, $jobCodeByPositionLabel);
+            $jobCode = $this->defaultJobCode($employee, $store, $jobCodeCatalog);
 
             if ($jobCode !== null) {
                 $payload['defaultJobCode'] = (int) $jobCode;
             }
 
-            // TCP's own field for carrying an id from an external system. Left
-            // as our employee id so the link is recoverable even if employeeId
-            // ever has to diverge.
+            // TCP's field for carrying an id from an external system — OUR
+            // employee id. With employeeId TCP-assigned, this is the only
+            // marker that lets a timed-out create be recognised on retry.
             $payload['exportCode'] = (string) $employee->id;
         }
 
@@ -143,12 +141,27 @@ class TcpEmployeeMapper
         return $this->latestByEffectiveDate($hires)?->effective_date?->toDateString();
     }
 
-    private function defaultJobCode(Employee $employee, array $jobCodeByPositionLabel): ?string
+    /**
+     * TCP's job codes are per-store — "Crew Member - 3795-01", attributed to a
+     * store by a "Restaurant Id" custom field — while our position labels are
+     * store-agnostic ("Crew Member"). So the match is: a clockable code for
+     * THIS store whose description starts with the position label,
+     * case-insensitive.
+     */
+    private function defaultJobCode(Employee $employee, ?Store $store, array $jobCodeCatalog): ?string
     {
         $label = $this->latestByEffectiveDate($employee->positions)?->position?->label;
+        $storeNumber = $store?->store_number;
 
-        if ($label !== null && isset($jobCodeByPositionLabel[$label])) {
-            return $jobCodeByPositionLabel[$label];
+        if ($label !== null && $storeNumber !== null) {
+            foreach ($jobCodeCatalog as $code) {
+                if (($code['store_number'] ?? null) === (string) $storeNumber
+                    && ($code['clockable'] ?? false)
+                    && stripos((string) $code['description'], (string) $label) === 0
+                ) {
+                    return (string) $code['id'];
+                }
+            }
         }
 
         $fallback = config('tcp.default_job_code');

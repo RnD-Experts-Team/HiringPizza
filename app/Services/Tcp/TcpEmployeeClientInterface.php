@@ -17,8 +17,10 @@ interface TcpEmployeeClientInterface
     public function listEmployees(): array;
 
     /**
-     * `employeeId` is CLIENT-SUPPLIED — TCP does not assign it. Setting it to
-     * our own employee id is what makes this idempotent.
+     * The payload carries NO `employeeId` — TCP assigns the next available id
+     * (the live roster's native ids would collide with our auto-increment).
+     * `exportCode` = our employee id is the recoverable link; NEVER auto-retry
+     * this call, because a timed-out create may have landed.
      */
     public function createEmployee(array $payload): array;
 

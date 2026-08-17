@@ -10,14 +10,9 @@ class TcpEmployeeClient implements TcpEmployeeClientInterface
 {
     private const TOKEN_KEY = 'tcp:access_token';
 
-    public function __construct()
-    {
-        if (blank(config('tcp.environment'))) {
-            throw new TcpException(
-                'TCP_ENV is not set. Refusing to talk to TimeClock Plus without an explicit environment.'
-            );
-        }
-    }
+    // No TCP_ENV guard: TCP has no sandbox, so the label could only describe
+    // the one live account. Safety is driver=fake + writes_enabled=false
+    // defaults + the EXTERNAL_WRITE_ALLOWED_STORES rollout allowlist.
 
     public function getEmployee(string $employeeId): ?array
     {
@@ -164,8 +159,8 @@ class TcpEmployeeClient implements TcpEmployeeClientInterface
             ->timeout((int) config('tcp.timeout', 5));
 
         // A POST is never auto-retried: TCP has no idempotency key, so a
-        // timed-out create may have landed. The employeeId lookup is the
-        // recovery path instead.
+        // timed-out create may have landed. The exportCode roster scan in
+        // TcpEmployeeSyncService::resolveRemoteId is the recovery path instead.
         if ($method !== 'post') {
             $retries = (int) config('tcp.retries', 1);
 

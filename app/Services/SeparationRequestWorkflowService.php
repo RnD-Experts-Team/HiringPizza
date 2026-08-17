@@ -88,16 +88,13 @@ class SeparationRequestWorkflowService
                 $loadedEmployee = $this->loadEmployee($employee->fresh());
 
                 // The fourth employee write path, and the easiest to miss.
-                // The fourth employee write path, and the easiest to miss.
                 // Without it a terminated employee keeps a live TCP record —
                 // still able to clock in, and still propagated to Humanity as
-                // schedulable by TCP's connector.
+                // schedulable by TCP's connector. The store is passed so the
+                // update payload keeps its `location`; omitting it risks a
+                // silent location wipe on the TCP side.
                 app(\App\Services\Tcp\TcpEmployeeSyncService::class)
-                    ->upsert($loadedEmployee);
-
-                // No-op while TCP's connector owns Humanity's employee records.
-                app(\App\Services\Humanity\HumanityEmployeeSyncService::class)
-                    ->upsert($loadedEmployee);
+                    ->upsert($loadedEmployee, Store::query()->find($separationRequest->store_id));
 
                 $loadedEmployee = $this->loadEmployee($employee->fresh());
                 $afterSnapshot = $this->snapshotEmployee($loadedEmployee);

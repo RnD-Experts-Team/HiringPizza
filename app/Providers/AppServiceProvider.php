@@ -2,9 +2,6 @@
 
 namespace App\Providers;
 
-use App\Services\Humanity\FakeHumanityStaffClient;
-use App\Services\Humanity\HumanityStaffClient;
-use App\Services\Humanity\HumanityStaffClientInterface;
 use App\Services\Tcp\FakeTcpEmployeeClient;
 use App\Services\Tcp\TcpEmployeeClient;
 use App\Services\Tcp\TcpEmployeeClientInterface;
@@ -18,18 +15,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        // TCP Manager+ — the system of record for employees. Its own connector
+        // carries them into Humanity; this service never writes Humanity.
         // The fake is a singleton so tests can seed it and see the same
         // instance the code under test uses.
-        $this->app->singleton(FakeHumanityStaffClient::class);
-
-        $this->app->bind(HumanityStaffClientInterface::class, function ($app) {
-            return config('humanity.driver') === 'http'
-                ? $app->make(HumanityStaffClient::class)
-                : $app->make(FakeHumanityStaffClient::class);
-        });
-
-        // TCP Manager+ — the system of record for employees, and where the
-        // push actually goes now. Its own connector carries them to Humanity.
         $this->app->singleton(FakeTcpEmployeeClient::class);
 
         $this->app->bind(TcpEmployeeClientInterface::class, function ($app) {

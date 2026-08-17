@@ -32,9 +32,10 @@ class EventRouter
             "{$authPrefix}.store.updated" => \App\Services\EventConsume\Handlers\StoreUpdatedHandler::class,
             "{$authPrefix}.store.deleted" => \App\Services\EventConsume\Handlers\StoreDeletedHandler::class,
 
-            // OPERATIONS — we are the only writer of employees into Humanity,
-            // so scheduling asks us to push one it cannot schedule.
-            "{$operationsPrefix}.employee.humanity_sync_requested" => \App\Services\EventConsume\Handlers\EmployeeHumanitySyncRequestedHandler::class,
+            // OPERATIONS — we are the only writer of employees into TCP, so
+            // scheduling asks us to push one it cannot schedule. TCP's own
+            // connector then carries the employee into Humanity.
+            "{$operationsPrefix}.employee.tcp_sync_requested" => \App\Services\EventConsume\Handlers\EmployeeTcpSyncRequestedHandler::class,
         ];
     }
     public function getResolvedMap(): array

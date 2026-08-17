@@ -22,7 +22,7 @@ use App\Models\Store;
 use App\Services\HiringEvents\HiringEventFactory;
 use App\Services\HiringEvents\HiringOutboxService;
 use App\Services\HiringEvents\ModelChangeSet;
-use App\Services\Humanity\HumanityEmployeeSyncService;
+use App\Services\Tcp\TcpEmployeeSyncService;
 use DateTimeInterface;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -72,7 +72,7 @@ class EmployeeWorkflowService
 
             $loadedEmployee = $this->loadEmployee($employee->fresh());
 
-            // Push to TCP (and Humanity, if its gate is open) BEFORE emitting the event. The payload can only
+            // Push to TCP BEFORE emitting the event. The payload can only
             // be built now, because the scheduling-relevant fields (email,
             // wage, position, store, hire date) live in the child rows the
             // sync* calls above just wrote.
@@ -103,16 +103,12 @@ class EmployeeWorkflowService
      * the local write is not allowed to succeed without it. A throw here rolls
      * the whole transaction back.
      *
-     * The Humanity call is retained but gated OFF by TCP_CONNECTOR_ACTIVE — it
-     * is only correct when TCP's own connector is not running, and running both
-     * would make us a second writer on the same Humanity records.
+     * We never write Humanity's employee records — TCP's connector owns them,
+     * and a second writer is how duplicate people get created.
      */
     private function pushToExternalSystems(Employee $employee, Store $store): void
     {
         app(TcpEmployeeSyncService::class)->upsert($employee, $store);
-
-        // No-op while TCP's connector owns Humanity's employee records.
-        app(HumanityEmployeeSyncService::class)->upsert($employee, $store);
     }
 
     /**
