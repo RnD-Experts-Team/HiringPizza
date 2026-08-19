@@ -85,6 +85,6 @@ return [
      */
     'valid_role_ids' => array_filter(array_map('trim', explode(',', env(
         'TCP_VALID_ROLE_IDS',
-        'AL,CO,IA,IN,KY,MA,MI,OH,SD,WY'
+        'AL,CO,IA,IN,KY,MA,MI,MS,OH,SD,WY'
     )))),
 ];
