@@ -9,6 +9,7 @@ use App\Models\HiringOutboxEvent;
 use App\Models\IdType;
 use App\Models\Store;
 use App\Models\TcpJobCode;
+use App\Models\TcpStoreRole;
 use App\Services\EmployeeWorkflowService;
 use App\Services\Tcp\FakeTcpEmployeeClient;
 use App\Services\Tcp\TcpException;
@@ -161,6 +162,37 @@ class EmployeeTcpPushTest extends TestCase
         // sending the wrong key silently drops the value.
         $this->assertSame('555-0100', $remote['cell']);
         $this->assertArrayNotHasKey('phone', $remote);
+    }
+
+    public function test_role_id_is_sent_when_the_store_has_a_mapped_role(): void
+    {
+        TcpStoreRole::query()->create(['store_number' => '03795-00001', 'role_id' => 'OH', 'source' => 'manual']);
+
+        app(EmployeeWorkflowService::class)->create($this->store, $this->payload());
+
+        $remote = array_values($this->tcp->employees)[0];
+        $this->assertSame('OH', $remote['roleId']);
+    }
+
+    public function test_role_id_is_omitted_when_the_store_has_no_mapped_role(): void
+    {
+        app(EmployeeWorkflowService::class)->create($this->store, $this->payload());
+
+        $remote = array_values($this->tcp->employees)[0];
+        $this->assertArrayNotHasKey('roleId', $remote);
+    }
+
+    public function test_a_mapped_role_id_outside_the_valid_set_is_refused_not_sent(): void
+    {
+        // Simulates a stale local row — an account-side role that no longer
+        // exists. Sending it anyway would silently misassign the person's
+        // state, which is worse than just leaving roleId unset.
+        TcpStoreRole::query()->create(['store_number' => '03795-00001', 'role_id' => 'ZZ', 'source' => 'manual']);
+
+        app(EmployeeWorkflowService::class)->create($this->store, $this->payload());
+
+        $remote = array_values($this->tcp->employees)[0];
+        $this->assertArrayNotHasKey('roleId', $remote);
     }
 
     public function test_the_tcp_assigned_id_is_stored_as_an_external_id(): void

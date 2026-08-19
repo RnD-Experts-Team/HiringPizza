@@ -6,6 +6,8 @@ use App\Enums\EmployeeStatus;
 use App\Enums\EmploymentType;
 use App\Models\Employee;
 use App\Models\Store;
+use App\Models\TcpStoreRole;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Employee -> TCP Manager+ payload.
@@ -120,6 +122,19 @@ class TcpEmployeeMapper
             $payload['location'] = (string) $store->store_number;
         }
 
+        // roleId is a plain string that, on this account, is a US state
+        // postal code rather than a permission role (confirmed against the
+        // live account, not TCP's general docs — see config('tcp.valid_role_ids')).
+        // TCP does not derive it from `location` itself, and creating an
+        // employee with none succeeds silently with the role left unset — so
+        // this is applied unconditionally (create AND update), sourced only
+        // from our local map, never a live TCP lookup.
+        $roleId = $this->roleId($store);
+
+        if ($roleId !== null) {
+            $payload['roleId'] = $roleId;
+        }
+
         // Deliberately absent: ssn and bank details. They are encrypted and
         // $hidden on the model, and clocking has no business with them.
 
@@ -215,6 +230,44 @@ class TcpEmployeeMapper
         throw new TcpJobCodeNotMappedException($label !== null
             ? "No TCP job code matches store {$storeNumber} for position '{$label}'. Run php artisan tcp:sync-job-codes, or set TCP_DEFAULT_JOB_CODE."
             : 'Employee has no position assigned, so no TCP job code can be resolved. Assign a position before creating, or set TCP_DEFAULT_JOB_CODE.');
+    }
+
+    /**
+     * The store's mapped TCP roleId (tcp:sync-role-map / tcp:map-role), or
+     * null if the store has none yet — never a live TCP lookup.
+     *
+     * A value outside tcp.valid_role_ids is refused rather than sent: it
+     * would mean the local table went stale (an account-side role removed),
+     * and a wrong-but-well-formed roleId is a worse failure than a missing
+     * one, since it silently misassigns a person's state instead of just
+     * leaving the field blank the way an unmapped store already does.
+     */
+    private function roleId(?Store $store): ?string
+    {
+        if ($store === null) {
+            return null;
+        }
+
+        $roleId = TcpStoreRole::query()->where('store_number', $store->store_number)->value('role_id');
+
+        if ($roleId === null) {
+            Log::warning('No TCP role mapped for store; creating/updating without roleId', [
+                'store_number' => $store->store_number,
+            ]);
+
+            return null;
+        }
+
+        if (!in_array($roleId, (array) config('tcp.valid_role_ids'), true)) {
+            Log::warning('Mapped TCP roleId is outside tcp.valid_role_ids; refusing to send it', [
+                'store_number' => $store->store_number,
+                'mapped_role_id' => $roleId,
+            ]);
+
+            return null;
+        }
+
+        return $roleId;
     }
 
     private function primaryContact(Employee $employee, string $type): ?string

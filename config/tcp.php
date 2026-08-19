@@ -72,4 +72,19 @@ return [
      | person. TcpEmployeeMapper::candidateEmployeeId().
      */
     'employee_id_offset' => (int) env('TCP_EMPLOYEE_ID_OFFSET', 9000000),
+
+    /*
+     | Employee `roleId` is a plain string. On this account it is not a
+     | permission role at all — it is a US state postal code, confirmed
+     | directly from the live account (not TCP's general docs, which barely
+     | describe the field). Only these values are legal to send; anything
+     | else is TCP silently rejecting or ignoring the field, which is exactly
+     | how the "role never got set" report happened in the first place.
+     | TcpStoreRole (tcp:sync-role-map / tcp:map-role) maps a store to one of
+     | these; TcpEmployeeMapper refuses to send a value outside this list.
+     */
+    'valid_role_ids' => array_filter(array_map('trim', explode(',', env(
+        'TCP_VALID_ROLE_IDS',
+        'AL,CO,IA,IN,KY,MA,MI,OH,SD,WY'
+    )))),
 ];
