@@ -33,6 +33,18 @@ class TcpEmployeeMapper
         array $jobCodeCatalog = [],
         ?int $employeeIdOverride = null,
     ): array {
+        // A roleId assigns a role, and a role carries its OWN defaults for
+        // certain fields — confirmed directly from a live rejection once
+        // roleId started being sent: "location cannot be set without
+        // overriding the employee role; workStatus cannot be set without
+        // overriding the employee role; defaultJobCode cannot be set without
+        // overriding the employee role." We always set those three
+        // ourselves, so whenever a roleId is going out, the override flags
+        // must go out true or TCP rejects our explicit values as conflicting
+        // with the role's. With no roleId there is no role to conflict with,
+        // so false (TCP's own example payload value) is correct as before.
+        $roleId = $this->roleId($store);
+
         $payload = [
             'firstName' => $employee->first_name,
             'lastName' => $employee->last_name,
@@ -40,11 +52,10 @@ class TcpEmployeeMapper
             // nullable — every other field is "type | null", these are plain
             // "boolean". Omitting a non-nullable field is exactly what "The
             // cell must have a value" describes, so these are sent explicitly
-            // rather than left to chance. Values match TCP's own example
-            // payload (https://api.tcplusondemand.com/v1/employees docs).
+            // rather than left to chance.
             'assignEmpAccess' => false,
-            'infoOverrideRole' => false,
-            'jobsOverrideRole' => false,
+            'infoOverrideRole' => $roleId !== null,
+            'jobsOverrideRole' => $roleId !== null,
         ];
 
         if ($forCreate) {
@@ -128,9 +139,8 @@ class TcpEmployeeMapper
         // TCP does not derive it from `location` itself, and creating an
         // employee with none succeeds silently with the role left unset — so
         // this is applied unconditionally (create AND update), sourced only
-        // from our local map, never a live TCP lookup.
-        $roleId = $this->roleId($store);
-
+        // from our local map, never a live TCP lookup. Resolved once, above,
+        // so the override flags and this field never disagree.
         if ($roleId !== null) {
             $payload['roleId'] = $roleId;
         }
