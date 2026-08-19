@@ -7,7 +7,7 @@ use App\Models\EmployeeId;
 use App\Models\ExternalIdType;
 use App\Models\IdType;
 use App\Models\Store;
-use Illuminate\Support\Facades\Cache;
+use App\Models\TcpJobCode;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -29,8 +29,6 @@ use Illuminate\Support\Facades\Log;
  */
 class TcpEmployeeSyncService
 {
-    private const JOB_CODE_CACHE_KEY = 'tcp:jobcodes:catalog';
-
     public function __construct(
         private readonly TcpEmployeeClientInterface $client,
         private readonly TcpEmployeeMapper $mapper,
@@ -160,47 +158,24 @@ class TcpEmployeeSyncService
     /**
      * TCP's job-code catalog, normalized for the mapper: per-store attribution
      * comes from the "Restaurant Id" custom field, never from parsing the
-     * description. Cached: TCP allows only 2500 calls a day, and this would
-     * otherwise run on every employee write.
+     * description. Read from the local mirror (tcp:sync-job-codes) rather
+     * than hitting TCP live — TCP allows only 2500 calls a day, shared with
+     * OperationsPizza, and this used to run on every employee write.
      *
      * @return array<int, array{id:string, description:string, store_number:?string, clockable:bool}>
      */
     private function jobCodeCatalog(): array
     {
-        return Cache::remember(self::JOB_CODE_CACHE_KEY, 3600, function () {
-            $catalog = [];
-
-            foreach ($this->client->listJobCodes() as $jobCode) {
-                $id = $jobCode['jobCodeId'] ?? $jobCode['id'] ?? null;
-                $description = $jobCode['description'] ?? $jobCode['name'] ?? null;
-
-                if ($id === null || is_array($id) || !is_string($description)) {
-                    continue;
-                }
-
-                $storeNumber = null;
-
-                foreach ((array) ($jobCode['customFields'] ?? []) as $field) {
-                    if (is_array($field)
-                        && strcasecmp(trim((string) ($field['description'] ?? '')), 'Restaurant Id') === 0
-                    ) {
-                        $value = trim((string) ($field['value'] ?? ''));
-                        $storeNumber = $value === '' ? null : $value;
-
-                        break;
-                    }
-                }
-
-                $catalog[] = [
-                    'id' => (string) $id,
-                    'description' => $description,
-                    'store_number' => $storeNumber,
-                    'clockable' => (bool) ($jobCode['clockable'] ?? false),
-                ];
-            }
-
-            return $catalog;
-        });
+        return TcpJobCode::query()
+            ->where('is_active', true)
+            ->get()
+            ->map(fn (TcpJobCode $row) => [
+                'id' => $row->tcp_job_code_id,
+                'description' => $row->description,
+                'store_number' => $row->store_number,
+                'clockable' => $row->clockable,
+            ])
+            ->all();
     }
 
     private function idFrom(array $row): string

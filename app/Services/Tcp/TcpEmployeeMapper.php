@@ -44,12 +44,7 @@ class TcpEmployeeMapper
 
             // TCP requires hireDate and defaultJobCode on create.
             $payload['hireDate'] = $hireDate ?? now()->toDateString();
-
-            $jobCode = $this->defaultJobCode($employee, $store, $jobCodeCatalog);
-
-            if ($jobCode !== null) {
-                $payload['defaultJobCode'] = (int) $jobCode;
-            }
+            $payload['defaultJobCode'] = (int) $this->defaultJobCode($employee, $store, $jobCodeCatalog);
 
             // TCP's field for carrying an id from an external system — OUR
             // employee id. With employeeId TCP-assigned, this is the only
@@ -147,8 +142,14 @@ class TcpEmployeeMapper
      * store-agnostic ("Crew Member"). So the match is: a clockable code for
      * THIS store whose description starts with the position label,
      * case-insensitive.
+     *
+     * Throws instead of returning null: a missing defaultJobCode used to
+     * reach TCP silently and come back as an opaque "The cell must have a
+     * value". This isn't a new failure mode — that create already failed and
+     * rolled back either way — it just makes the failure local and legible,
+     * and stops burning a TCP call on a doomed request.
      */
-    private function defaultJobCode(Employee $employee, ?Store $store, array $jobCodeCatalog): ?string
+    private function defaultJobCode(Employee $employee, ?Store $store, array $jobCodeCatalog): string
     {
         $label = $this->latestByEffectiveDate($employee->positions)?->position?->label;
         $storeNumber = $store?->store_number;
@@ -166,7 +167,15 @@ class TcpEmployeeMapper
 
         $fallback = config('tcp.default_job_code');
 
-        return filled($fallback) ? (string) $fallback : null;
+        if (filled($fallback)
+            && collect($jobCodeCatalog)->contains(fn (array $code) => (string) $code['id'] === (string) $fallback)
+        ) {
+            return (string) $fallback;
+        }
+
+        throw new TcpJobCodeNotMappedException($label !== null
+            ? "No TCP job code matches store {$storeNumber} for position '{$label}'. Run php artisan tcp:sync-job-codes, or set TCP_DEFAULT_JOB_CODE."
+            : 'Employee has no position assigned, so no TCP job code can be resolved. Assign a position before creating, or set TCP_DEFAULT_JOB_CODE.');
     }
 
     private function primaryContact(Employee $employee, string $type): ?string

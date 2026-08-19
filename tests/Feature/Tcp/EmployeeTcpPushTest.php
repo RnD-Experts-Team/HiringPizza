@@ -8,9 +8,11 @@ use App\Models\ExternalIdType;
 use App\Models\HiringOutboxEvent;
 use App\Models\IdType;
 use App\Models\Store;
+use App\Models\TcpJobCode;
 use App\Services\EmployeeWorkflowService;
 use App\Services\Tcp\FakeTcpEmployeeClient;
 use App\Services\Tcp\TcpException;
+use App\Services\Tcp\TcpJobCodeNotMappedException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -41,10 +43,13 @@ class EmployeeTcpPushTest extends TestCase
         $this->tcp = app(FakeTcpEmployeeClient::class);
 
         // The real catalog shape: per-store codes attributed by the
-        // "Restaurant Id" custom field, not by their description.
-        $this->tcp->seedJobCode('37950101', 'Crew Member - 3795-01', '03795-00001');
-        $this->tcp->seedJobCode('37950103', 'Manager - 3795-01', '03795-00001');
-        $this->tcp->seedJobCode('37950201', 'Crew Member - 3795-02', '03795-00002');
+        // "Restaurant Id" custom field, not by their description. Seeded
+        // into the LOCAL mirror — jobCodeCatalog() reads tcp_job_codes, not
+        // the live client, so seeding the fake client alone would leave the
+        // catalog empty.
+        TcpJobCode::query()->create(['tcp_job_code_id' => '37950101', 'description' => 'Crew Member - 3795-01', 'store_number' => '03795-00001', 'clockable' => true, 'is_active' => true]);
+        TcpJobCode::query()->create(['tcp_job_code_id' => '37950103', 'description' => 'Manager - 3795-01', 'store_number' => '03795-00001', 'clockable' => true, 'is_active' => true]);
+        TcpJobCode::query()->create(['tcp_job_code_id' => '37950201', 'description' => 'Crew Member - 3795-02', 'store_number' => '03795-00002', 'clockable' => true, 'is_active' => true]);
     }
 
     private function payload(array $overrides = []): array
@@ -63,6 +68,9 @@ class EmployeeTcpPushTest extends TestCase
             ],
             'status_history' => [
                 ['status' => 'hired', 'effective_date' => '2026-01-15'],
+            ],
+            'positions' => [
+                ['position_id' => $this->positionId('Crew Member'), 'effective_date' => '2026-01-15'],
             ],
         ], $overrides);
     }
@@ -121,11 +129,8 @@ class EmployeeTcpPushTest extends TestCase
 
     public function test_the_default_job_code_matches_the_stores_catalog_entry(): void
     {
-        app(EmployeeWorkflowService::class)->create($this->store, $this->payload([
-            'positions' => [
-                ['position_id' => $this->positionId('Crew Member'), 'effective_date' => '2026-01-15'],
-            ],
-        ]));
+        // payload()'s default position is already 'Crew Member' for this store.
+        app(EmployeeWorkflowService::class)->create($this->store, $this->payload());
 
         $remote = array_values($this->tcp->employees)[0];
 
@@ -184,6 +189,50 @@ class EmployeeTcpPushTest extends TestCase
         $this->assertCount(0, $this->tcp->employees);
         $this->assertNull(app(\App\Services\Tcp\TcpEmployeeSyncService::class)
             ->existingTcpId($employee));
+    }
+
+    public function test_an_unresolvable_job_code_rolls_the_whole_creation_back_locally(): void
+    {
+        // No position, no TCP_DEFAULT_JOB_CODE — nothing to resolve.
+        config(['tcp.default_job_code' => null]);
+
+        try {
+            app(EmployeeWorkflowService::class)->create($this->store, $this->payload(['positions' => []]));
+            $this->fail('Expected TcpJobCodeNotMappedException.');
+        } catch (TcpJobCodeNotMappedException) {
+            // expected — proves the original "cell must have a value" failure
+            // is now caught locally, before ever reaching TCP.
+        }
+
+        $this->assertSame(0, Employee::count());
+        $this->assertSame(0, HiringOutboxEvent::count());
+        $this->assertCount(0, $this->tcp->employees);
+    }
+
+    public function test_a_valid_default_job_code_fallback_lets_an_unmatched_create_succeed(): void
+    {
+        TcpJobCode::query()->create(['tcp_job_code_id' => '99999999', 'description' => 'Regular', 'store_number' => null, 'clockable' => true, 'is_active' => true]);
+        config(['tcp.default_job_code' => '99999999']);
+
+        app(EmployeeWorkflowService::class)->create($this->store, $this->payload(['positions' => []]));
+
+        $remote = array_values($this->tcp->employees)[0];
+        $this->assertSame(99999999, $remote['defaultJobCode']);
+    }
+
+    public function test_a_default_job_code_absent_from_the_local_catalog_still_throws(): void
+    {
+        // Configured, but never synced — a typo or a stale value.
+        config(['tcp.default_job_code' => '00000000']);
+
+        try {
+            app(EmployeeWorkflowService::class)->create($this->store, $this->payload(['positions' => []]));
+            $this->fail('Expected TcpJobCodeNotMappedException.');
+        } catch (TcpJobCodeNotMappedException) {
+            // expected
+        }
+
+        $this->assertSame(0, Employee::count());
     }
 
     private function positionId(string $label): int
