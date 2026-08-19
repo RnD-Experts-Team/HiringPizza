@@ -122,6 +122,30 @@ class EmployeeTcpPushTest extends TestCase
         $this->assertSame((string) $employee->id, $remote['exportCode']);
     }
 
+    public function test_a_rejection_with_no_employee_id_sent_still_reports_tcps_real_message(): void
+    {
+        // With the flag off, the payload never has an `employeeId` key at
+        // all. A logging line that reads it unconditionally on rejection
+        // previously crashed with "Undefined array key", hiding TCP's actual
+        // error behind an unrelated one.
+        config(['tcp.assign_employee_id' => false]);
+
+        $this->tcp->failNext('createEmployee', new TcpException(
+            'TCP create employee failed: The cell must have a value.',
+            400,
+            [['item' => 1, 'details' => [['error' => 'The cell must have a value.', 'field' => 'cell']], 'message' => 'The cell must have a value.']],
+        ));
+
+        try {
+            app(EmployeeWorkflowService::class)->create($this->store, $this->payload());
+            $this->fail('Expected TCP\'s rejection to propagate.');
+        } catch (TcpException $e) {
+            $this->assertStringContainsString('cell must have a value', $e->getMessage());
+        }
+
+        $this->assertSame(0, Employee::count());
+    }
+
     public function test_a_phone_contact_is_sent_as_cell_not_phone(): void
     {
         app(EmployeeWorkflowService::class)->create($this->store, $this->payload([

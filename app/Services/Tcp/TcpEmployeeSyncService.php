@@ -139,10 +139,15 @@ class TcpEmployeeSyncService
 
                 $lastException = $e;
 
-                Log::info('TCP employeeId candidate rejected, trying the next one', [
+                Log::info('TCP create rejected, trying the next employeeId candidate', [
                     'employee_id' => $employee->id,
-                    'attempted_tcp_employee_id' => $payload['employeeId'],
+                    // Absent entirely when tcp.assign_employee_id is false —
+                    // that mode never varies the payload, so there IS no next
+                    // candidate; the loop runs once and this line never
+                    // repeats (retryLimit is 0 in that mode).
+                    'attempted_tcp_employee_id' => $payload['employeeId'] ?? '(auto — none sent)',
                     'attempt' => $attempt,
+                    'tcp_errors' => $e->errors,
                 ]);
             }
         }
