@@ -29,6 +29,7 @@ class TcpEmployeeMapper
         ?Store $store = null,
         bool $forCreate = true,
         array $jobCodeCatalog = [],
+        ?int $employeeIdOverride = null,
     ): array {
         $payload = [
             'firstName' => $employee->first_name,
@@ -36,10 +37,15 @@ class TcpEmployeeMapper
         ];
 
         if ($forCreate) {
-            // employeeId is deliberately ABSENT: TCP then assigns the next
-            // available id. The live TCP roster predates us with its own native
-            // ids (5896-style), so supplying our auto-increment id would sooner
-            // or later collide with a real person's record.
+            // This account has no auto-numbering — TCP requires a
+            // caller-supplied employeeId (confirmed against the real account's
+            // own "Add employee" UI, which asks for one too). We pick our own
+            // rather than send our raw auto-increment id, which would collide
+            // with the live roster's native ids ("5896"-style) almost
+            // immediately. $employeeIdOverride lets the sync service retry
+            // with the next candidate if this one is already taken.
+            $payload['employeeId'] = (string) ($employeeIdOverride ?? $this->candidateEmployeeId($employee));
+
             $hireDate = $this->latestHireDate($employee);
 
             // TCP requires hireDate and defaultJobCode on create.
@@ -47,8 +53,9 @@ class TcpEmployeeMapper
             $payload['defaultJobCode'] = (int) $this->defaultJobCode($employee, $store, $jobCodeCatalog);
 
             // TCP's field for carrying an id from an external system — OUR
-            // employee id. With employeeId TCP-assigned, this is the only
-            // marker that lets a timed-out create be recognised on retry.
+            // employee id. This (not employeeId, which we now pick ourselves)
+            // is what lets a timed-out create be recognised on retry, by
+            // scanning the roster in TcpEmployeeSyncService::resolveRemoteId.
             $payload['exportCode'] = (string) $employee->id;
         }
 
@@ -98,6 +105,19 @@ class TcpEmployeeMapper
         // $hidden on the model, and clocking has no business with them.
 
         return $payload;
+    }
+
+    /**
+     * The employeeId candidate for a create attempt.
+     *
+     * `offset + id*100 + attempt` reserves each employee its own block of 100
+     * candidates, so one employee's retries can never collide with another
+     * employee's base id — only with real TCP records, which is the case
+     * TcpEmployeeSyncService's retry loop exists to recover from.
+     */
+    public function candidateEmployeeId(Employee $employee, int $attempt = 0): int
+    {
+        return (int) config('tcp.employee_id_offset') + ((int) $employee->id * 100) + $attempt;
     }
 
     public function currentStatus(Employee $employee): ?string

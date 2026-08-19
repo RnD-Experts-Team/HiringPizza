@@ -20,15 +20,21 @@ use Illuminate\Support\Facades\Log;
  *
  * Writing to Humanity ourselves would make us a second writer on those records.
  *
- * TCP assigns the `employeeId` on create — the live roster predates us with
- * its own native ids, so supplying our auto-increment id risks colliding with
- * a real person's record. Idempotency comes from `exportCode` (= our employee
- * id): a retry after a timed-out create finds the record the previous attempt
- * made by scanning for it — and TCP, like Humanity, has no bulk delete to
- * undo a duplicate with.
+ * This account has no auto-numbering, so WE choose `employeeId` on create
+ * (TcpEmployeeMapper::candidateEmployeeId — offset far from the live roster's
+ * native ids). A collision is therefore expected occasionally, not
+ * exceptional, and createWithRetry() below tries the next candidate when TCP
+ * rejects one. Idempotency across a *timed-out* create (a different problem —
+ * the response never arrived, so we don't know if it landed) still comes from
+ * `exportCode` (= our employee id): resolveRemoteId() recovers that case by
+ * scanning the roster — TCP, like Humanity, has no bulk delete to undo a
+ * duplicate with.
  */
 class TcpEmployeeSyncService
 {
+    /** Extra employeeId candidates to try after the first is rejected. */
+    private const CREATE_ID_RETRY_LIMIT = 4;
+
     public function __construct(
         private readonly TcpEmployeeClientInterface $client,
         private readonly TcpEmployeeMapper $mapper,
@@ -81,9 +87,7 @@ class TcpEmployeeSyncService
                 $this->mapper->toPayload($employee, $store, forCreate: false, jobCodeCatalog: $this->jobCodeCatalog())
             );
         } else {
-            $created = $this->client->createEmployee(
-                $this->mapper->toPayload($employee, $store, forCreate: true, jobCodeCatalog: $this->jobCodeCatalog())
-            );
+            $created = $this->createWithRetry($employee, $store);
 
             $tcpId = $this->idFrom($created);
         }
@@ -91,6 +95,53 @@ class TcpEmployeeSyncService
         $this->storeTcpId($employee, $tcpId);
 
         return $tcpId;
+    }
+
+    /**
+     * Create, retrying with the next employeeId candidate when TCP rejects
+     * THIS specific attempt.
+     *
+     * Only retries on a definitive synchronous rejection — TcpException with a
+     * non-empty `errors` body, meaning TCP explicitly told us this record did
+     * not get created (whether via a 4xx response or the 2xx-with-errors shape
+     * TcpEmployeeClient also treats as a failure). An exception with no
+     * `errors` (a timeout, a 5xx, a malformed response) is NOT retried here —
+     * that is exactly the ambiguous case where a create may have landed
+     * anyway, and resolveRemoteId()'s exportCode scan is the recovery path for
+     * it, not a blind resend with a different id.
+     */
+    private function createWithRetry(Employee $employee, ?Store $store): array
+    {
+        $catalog = $this->jobCodeCatalog();
+        $lastException = null;
+
+        for ($attempt = 0; $attempt <= self::CREATE_ID_RETRY_LIMIT; $attempt++) {
+            $payload = $this->mapper->toPayload(
+                $employee,
+                $store,
+                forCreate: true,
+                jobCodeCatalog: $catalog,
+                employeeIdOverride: $this->mapper->candidateEmployeeId($employee, $attempt),
+            );
+
+            try {
+                return $this->client->createEmployee($payload);
+            } catch (TcpException $e) {
+                if ($e->errors === []) {
+                    throw $e;
+                }
+
+                $lastException = $e;
+
+                Log::info('TCP employeeId candidate rejected, trying the next one', [
+                    'employee_id' => $employee->id,
+                    'attempted_tcp_employee_id' => $payload['employeeId'],
+                    'attempt' => $attempt,
+                ]);
+            }
+        }
+
+        throw $lastException;
     }
 
     /**

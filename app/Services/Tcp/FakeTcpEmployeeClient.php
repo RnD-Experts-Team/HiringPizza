@@ -80,11 +80,23 @@ class FakeTcpEmployeeClient implements TcpEmployeeClientInterface
         $employeeId = (string) ($payload['employeeId'] ?? '');
 
         if ($employeeId === '') {
-            // TCP's documented behaviour: a null employeeId auto-generates
-            // the next available id.
+            // Real TCP has no auto-numbering on this account and requires a
+            // caller-supplied id; this branch only exists for callers in tests
+            // that don't care about the id and haven't set one.
             $employeeId = (string) $this->nextEmployeeId++;
         } elseif (isset($this->employees[$employeeId])) {
-            throw new TcpException("TCP create employee failed: employeeId {$employeeId} already exists.");
+            // Shaped like the real rejection: a structured errors[] body, so
+            // TcpEmployeeSyncService::createWithRetry() can tell this apart
+            // from an ambiguous failure and try the next candidate id.
+            throw new TcpException(
+                "TCP create employee failed: employeeId {$employeeId} already exists.",
+                400,
+                [[
+                    'item' => 1,
+                    'details' => [['error' => 'employeeId already exists.', 'field' => 'employeeId']],
+                    'message' => 'employeeId already exists.',
+                ]],
+            );
         }
 
         $this->calls[] = ['op' => 'createEmployee', 'args' => ['employeeId' => $employeeId]];

@@ -38,7 +38,11 @@ return [
 
     // Tighter than OperationsPizza's 10s/2 on purpose: this push runs INSIDE
     // the employee-create DB transaction, so a slow TCP response holds a
-    // transaction open. POSTs are never retried at all (no idempotency key).
+    // transaction open. POSTs are never TRANSPORT-retried (no idempotency key
+    // — a timed-out request may have landed, so blindly resending it here
+    // risks a duplicate person). TcpEmployeeSyncService's employeeId-conflict
+    // retry is a different, deliberate thing: it only fires on a definitive
+    // synchronous rejection (TCP said no, nothing landed), never on a timeout.
     'timeout' => 5,
     'retries' => 1,
     'retry_ms' => 200,
@@ -50,4 +54,14 @@ return [
      | defaultJobCode on create.
      */
     'default_job_code' => env('TCP_DEFAULT_JOB_CODE'),
+
+    /*
+     | This account has no auto-numbering: TCP requires a caller-supplied
+     | employeeId on create (confirmed against the real account — its own "Add
+     | employee" UI asks for one too). The live roster's native ids are low
+     | integers ("5896"-style), so ours are built as this offset + our own id,
+     | landing far outside that range instead of colliding with a real person.
+     | TcpEmployeeMapper::candidateEmployeeId().
+     */
+    'employee_id_offset' => (int) env('TCP_EMPLOYEE_ID_OFFSET', 9000000),
 ];

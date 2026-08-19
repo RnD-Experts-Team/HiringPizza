@@ -83,9 +83,11 @@ class EmployeeTcpPushTest extends TestCase
 
         $remote = array_values($this->tcp->employees)[0];
 
-        // employeeId is TCP-ASSIGNED — the live roster's native ids would
-        // collide with our auto-increment. exportCode carries our id instead.
+        // employeeId is OUR OWN candidate, offset far from our auto-increment
+        // range so it doesn't collide with the live roster's native ids.
+        // exportCode still carries our raw id, for the exportCode roster scan.
         $this->assertNotSame((string) $employee->id, (string) $remote['employeeId']);
+        $this->assertSame((string) (9000000 + $employee->id * 100), $remote['employeeId']);
         $this->assertSame((string) $employee->id, $remote['exportCode']);
 
         $this->assertSame('marco@example.com', $remote['email']);
@@ -154,6 +156,53 @@ class EmployeeTcpPushTest extends TestCase
         // downstream to act on.
         $this->assertSame(0, Employee::count());
         $this->assertSame(0, HiringOutboxEvent::count());
+    }
+
+    public function test_a_taken_employee_id_candidate_is_retried_with_the_next_one(): void
+    {
+        // Create locally only, so we get a real employee id to compute the
+        // candidate from before anything is pushed to TCP.
+        config(['tcp.writes_enabled' => false]);
+        $employee = app(EmployeeWorkflowService::class)->create($this->store, $this->payload());
+
+        $mapper = app(\App\Services\Tcp\TcpEmployeeMapper::class);
+        $baseCandidate = (string) $mapper->candidateEmployeeId($employee);
+
+        // Someone else already occupies the id we'd pick first.
+        $this->tcp->seed($baseCandidate, ['firstName' => 'Someone', 'lastName' => 'Else']);
+
+        config(['tcp.writes_enabled' => true]);
+        $tcpId = app(\App\Services\Tcp\TcpEmployeeSyncService::class)->upsert($employee, $this->store);
+
+        $this->assertNotSame($baseCandidate, $tcpId);
+        $this->assertSame((string) ((int) $baseCandidate + 1), $tcpId);
+        // The seeded conflict plus the one that actually landed.
+        $this->assertCount(2, $this->tcp->employees);
+    }
+
+    public function test_exhausting_every_employee_id_candidate_throws_and_creates_nothing(): void
+    {
+        config(['tcp.writes_enabled' => false]);
+        $employee = app(EmployeeWorkflowService::class)->create($this->store, $this->payload());
+
+        $mapper = app(\App\Services\Tcp\TcpEmployeeMapper::class);
+
+        // Occupy every candidate the retry loop will try (attempts 0..4).
+        for ($attempt = 0; $attempt <= 4; $attempt++) {
+            $this->tcp->seed((string) $mapper->candidateEmployeeId($employee, $attempt));
+        }
+
+        config(['tcp.writes_enabled' => true]);
+
+        try {
+            app(\App\Services\Tcp\TcpEmployeeSyncService::class)->upsert($employee, $this->store);
+            $this->fail('Expected every candidate to be rejected.');
+        } catch (TcpException $e) {
+            $this->assertStringContainsString('already exists', $e->getMessage());
+        }
+
+        // Only the 5 pre-seeded conflicts — nothing from our side landed.
+        $this->assertCount(5, $this->tcp->employees);
     }
 
     public function test_a_retried_push_adopts_the_existing_record_instead_of_duplicating(): void
