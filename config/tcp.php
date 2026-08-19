@@ -56,12 +56,20 @@ return [
     'default_job_code' => env('TCP_DEFAULT_JOB_CODE'),
 
     /*
-     | This account has no auto-numbering: TCP requires a caller-supplied
-     | employeeId on create (confirmed against the real account — its own "Add
-     | employee" UI asks for one too). The live roster's native ids are low
-     | integers ("5896"-style), so ours are built as this offset + our own id,
-     | landing far outside that range instead of colliding with a real person.
-     | TcpEmployeeMapper::candidateEmployeeId().
+     | Whether WE assign employeeId on create, vs leaving it out and letting
+     | TCP auto-generate the next available id (its own documented behaviour
+     | for a null value). The UI requiring manual entry when adding an
+     | employee by hand doesn't prove the API does — that's still unconfirmed,
+     | so this is a real toggle, not a settled decision. If false works
+     | reliably, the offset scheme below can go away entirely.
+     */
+    'assign_employee_id' => (bool) env('TCP_ASSIGN_EMPLOYEE_ID', true),
+
+    /*
+     | Only used when assign_employee_id is true. The live roster's native ids
+     | are low integers ("5896"-style), so ours are built as this offset + our
+     | own id, landing far outside that range instead of colliding with a real
+     | person. TcpEmployeeMapper::candidateEmployeeId().
      */
     'employee_id_offset' => (int) env('TCP_EMPLOYEE_ID_OFFSET', 9000000),
 ];

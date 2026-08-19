@@ -34,17 +34,29 @@ class TcpEmployeeMapper
         $payload = [
             'firstName' => $employee->first_name,
             'lastName' => $employee->last_name,
+            // The only three fields in TCP's schema NOT documented as
+            // nullable — every other field is "type | null", these are plain
+            // "boolean". Omitting a non-nullable field is exactly what "The
+            // cell must have a value" describes, so these are sent explicitly
+            // rather than left to chance. Values match TCP's own example
+            // payload (https://api.tcplusondemand.com/v1/employees docs).
+            'assignEmpAccess' => false,
+            'infoOverrideRole' => false,
+            'jobsOverrideRole' => false,
         ];
 
         if ($forCreate) {
-            // This account has no auto-numbering — TCP requires a
-            // caller-supplied employeeId (confirmed against the real account's
-            // own "Add employee" UI, which asks for one too). We pick our own
+            // TCP documents a null employeeId as auto-generating the next
+            // available id. Whether this account actually relies on that, or
+            // needs one supplied, is still being confirmed — see
+            // config('tcp.assign_employee_id'). When true, we pick our own
             // rather than send our raw auto-increment id, which would collide
             // with the live roster's native ids ("5896"-style) almost
             // immediately. $employeeIdOverride lets the sync service retry
             // with the next candidate if this one is already taken.
-            $payload['employeeId'] = (string) ($employeeIdOverride ?? $this->candidateEmployeeId($employee));
+            if (config('tcp.assign_employee_id', true)) {
+                $payload['employeeId'] = (string) ($employeeIdOverride ?? $this->candidateEmployeeId($employee));
+            }
 
             $hireDate = $this->latestHireDate($employee);
 
@@ -59,9 +71,9 @@ class TcpEmployeeMapper
             $payload['exportCode'] = (string) $employee->id;
         }
 
-        if (filled($employee->middle_name)) {
-            $payload['middleName'] = $employee->middle_name;
-        }
+        // middleName is deliberately absent: TCP's schema has no such field
+        // (verified against https://api.tcplusondemand.com/v1/employees) —
+        // sending it did nothing but clutter the payload.
 
         $email = $this->primaryContact($employee, 'email');
 
@@ -69,18 +81,25 @@ class TcpEmployeeMapper
             $payload['email'] = $email;
         }
 
+        // TCP's field is `cell`, not `phone` — there is no `phone` field in
+        // its schema. Sending the wrong key meant this value never reached
+        // TCP at all, regardless of what it was — and per the account's own
+        // rejection ("The cell must have a value", field "cell"), this cell
+        // is one it actually enforces.
         $phone = $this->primaryContact($employee, 'phone');
 
         if ($phone !== null) {
-            $payload['phone'] = $phone;
+            $payload['cell'] = $phone;
         }
 
         $employmentType = $employee->employment_type instanceof EmploymentType
             ? $employee->employment_type->value
             : $employee->employment_type;
 
+        // TCP's field is `workStatus`, not `employeeType` — same problem as
+        // `cell`/`phone`: the wrong key silently dropped this value.
         if ($employmentType !== null) {
-            $payload['employeeType'] = $employmentType === 'W2' ? 'FullTime' : 'Contractor';
+            $payload['workStatus'] = $employmentType === 'W2' ? 'FullTime' : 'Contractor';
         }
 
         $address = $this->primaryAddress($employee);

@@ -109,13 +109,19 @@ class TcpEmployeeSyncService
      * that is exactly the ambiguous case where a create may have landed
      * anyway, and resolveRemoteId()'s exportCode scan is the recovery path for
      * it, not a blind resend with a different id.
+     *
+     * A single attempt when config('tcp.assign_employee_id') is false: with no
+     * id of ours in the payload, every attempt would be byte-identical, so
+     * retrying would just spend the same rejection five times over.
      */
     private function createWithRetry(Employee $employee, ?Store $store): array
     {
         $catalog = $this->jobCodeCatalog();
         $lastException = null;
 
-        for ($attempt = 0; $attempt <= self::CREATE_ID_RETRY_LIMIT; $attempt++) {
+        $retryLimit = config('tcp.assign_employee_id', true) ? self::CREATE_ID_RETRY_LIMIT : 0;
+
+        for ($attempt = 0; $attempt <= $retryLimit; $attempt++) {
             $payload = $this->mapper->toPayload(
                 $employee,
                 $store,

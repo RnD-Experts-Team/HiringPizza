@@ -92,9 +92,51 @@ class EmployeeTcpPushTest extends TestCase
 
         $this->assertSame('marco@example.com', $remote['email']);
         $this->assertSame('2026-01-15', $remote['hireDate']);
-        $this->assertSame('FullTime', $remote['employeeType']);
+        // workStatus, not employeeType — TCP's schema has no employeeType field.
+        $this->assertSame('FullTime', $remote['workStatus']);
         // location is the store number — TCP Locations are named by it.
         $this->assertSame('03795-00001', $remote['location']);
+
+        // The only three fields TCP's schema does not mark nullable. Omitting
+        // any of them is what "The cell must have a value" turned out to mean.
+        $this->assertFalse($remote['assignEmpAccess']);
+        $this->assertFalse($remote['infoOverrideRole']);
+        $this->assertFalse($remote['jobsOverrideRole']);
+
+        // Not a real TCP field — confirms we're not still sending it.
+        $this->assertArrayNotHasKey('employeeType', $remote);
+        $this->assertArrayNotHasKey('middleName', $remote);
+    }
+
+    public function test_employee_id_is_omitted_and_tcp_auto_generates_when_the_flag_is_off(): void
+    {
+        config(['tcp.assign_employee_id' => false]);
+
+        $employee = app(EmployeeWorkflowService::class)->create($this->store, $this->payload());
+
+        $remote = array_values($this->tcp->employees)[0];
+
+        // TCP assigned it, per its own documented behaviour for a null value —
+        // the fake client's auto-increment stands in for that here.
+        $this->assertNotSame((string) (9000000 + $employee->id * 100), $remote['employeeId']);
+        $this->assertSame((string) $employee->id, $remote['exportCode']);
+    }
+
+    public function test_a_phone_contact_is_sent_as_cell_not_phone(): void
+    {
+        app(EmployeeWorkflowService::class)->create($this->store, $this->payload([
+            'contacts' => [
+                ['contact_name' => 'Work', 'contact_type' => 'email', 'contact_value' => 'marco@example.com', 'is_primary' => true],
+                ['contact_name' => 'Mobile', 'contact_type' => 'phone', 'contact_value' => '555-0100', 'is_primary' => true],
+            ],
+        ]));
+
+        $remote = array_values($this->tcp->employees)[0];
+
+        // TCP's field is `cell` — there is no `phone` field in its schema, so
+        // sending the wrong key silently drops the value.
+        $this->assertSame('555-0100', $remote['cell']);
+        $this->assertArrayNotHasKey('phone', $remote);
     }
 
     public function test_the_tcp_assigned_id_is_stored_as_an_external_id(): void

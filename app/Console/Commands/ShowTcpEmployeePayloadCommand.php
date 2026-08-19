@@ -108,9 +108,34 @@ class ShowTcpEmployeePayloadCommand extends Command
             }
         }
 
+        // Full field list from TCP's own docs (https://api.tcplusondemand.com/v1/employees).
+        // assignEmpAccess/infoOverrideRole/jobsOverrideRole are the only three
+        // NOT documented as nullable — everything else may legitimately be
+        // absent, those three should never be missing from what we send.
+        $requiredFields = ['assignEmpAccess', 'infoOverrideRole', 'jobsOverrideRole'];
+        $nullableFields = [
+            'address1', 'address2', 'birthDate', 'cell', 'city', 'classification', 'badgeNumber',
+            'networkId', 'department', 'email', 'employeeId', 'roleId', 'managerId',
+            'enableLockedPeriod', 'exportCode', 'firstName', 'gender', 'hireDate', 'home',
+            'isSuspended', 'language', 'lastName', 'location', 'lockHoursBefore', 'officeExt',
+            'office', 'scheduleGroup', 'seniorityDate', 'state', 'scheduleOrg', 'terminationDate',
+            'timezone', 'workStatus', 'zip', 'smsAddress', 'defaultCostCode', 'defaultJobCode',
+            'defaultPayRate',
+        ];
+
         $this->newLine();
-        $this->line('<info>Fields NOT sent at all:</info>');
-        foreach (['employeeId', 'middleName', 'phone', 'address1', 'city', 'state', 'zip', 'terminationDate'] as $field) {
+        $missingRequired = array_filter($requiredFields, fn ($f) => !array_key_exists($f, $payload));
+
+        if ($missingRequired !== []) {
+            $this->error('NOT sent, and NOT documented as nullable by TCP — top suspects:');
+            foreach ($missingRequired as $field) {
+                $this->line("  {$field}");
+            }
+            $this->newLine();
+        }
+
+        $this->line('<info>Other fields not sent (documented nullable — probably fine):</info>');
+        foreach ($nullableFields as $field) {
             if (!array_key_exists($field, $payload)) {
                 $this->line("  {$field}");
             }
