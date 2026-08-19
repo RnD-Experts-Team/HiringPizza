@@ -109,11 +109,19 @@ class TcpEmployeeClient implements TcpEmployeeClientInterface
 
             // Logs AND throws. Swallowing would let a failed push commit an
             // employee that does not exist in TCP.
+            //
+            // The RAW error array is logged because TCP's field-naming key is
+            // not stable across endpoints — "The cell must have a value" tells
+            // you a required field is empty but not which one, and summarising
+            // it can drop the only clue. Payload keys (never values: this
+            // carries names, email, address) show what we actually sent.
             Log::error('TCP employee call failed', [
                 'context' => $context,
                 'http_status' => $response->status(),
                 'request_id' => data_get($body, 'meta.requestId'),
                 'message' => $message,
+                'raw_errors' => $body['errors'] ?? null,
+                'sent_fields' => $this->describePayloadShape($payload),
             ]);
 
             throw new TcpException(
@@ -238,11 +246,54 @@ class TcpEmployeeClient implements TcpEmployeeClientInterface
                 return 'unknown error';
             }
 
+            // TCP is not consistent about what it calls the offending field,
+            // and losing it turns a precise complaint into "The cell must have
+            // a value" with no way to act on it. Try every spelling seen.
+            $field = null;
+
+            foreach (['field', 'property', 'propertyName', 'column', 'columnName', 'name', 'target', 'path'] as $key) {
+                $candidate = $error[$key] ?? null;
+
+                if (is_string($candidate) && trim($candidate) !== '') {
+                    $field = trim($candidate);
+
+                    break;
+                }
+            }
+
+            $text = $error['message'] ?? $error['description'] ?? $error['detail'] ?? null;
+
             return trim(implode(' ', array_filter([
-                $error['field'] ?? null,
-                $error['message'] ?? $error['description'] ?? null,
+                $field === null ? null : "[{$field}]",
+                is_string($text) ? $text : null,
             ])));
         }, array_slice($errors, 0, 5)));
+    }
+
+    /**
+     * Field names and which of them we sent empty — never the values, since
+     * this payload carries a person's name, email and address.
+     *
+     * @return array{fields:array<int,string>, empty:array<int,string>}
+     */
+    private function describePayloadShape(array $payload): array
+    {
+        // POST bodies are arrays of records; inspect the first.
+        $record = array_is_list($payload) ? ($payload[0] ?? []) : $payload;
+
+        if (!is_array($record)) {
+            return ['fields' => [], 'empty' => []];
+        }
+
+        $empty = array_keys(array_filter(
+            $record,
+            fn ($value) => $value === null || $value === '' || $value === []
+        ));
+
+        return [
+            'fields' => array_keys($record),
+            'empty' => array_values($empty),
+        ];
     }
 
     private function assertWritesEnabled(string $operation): void
