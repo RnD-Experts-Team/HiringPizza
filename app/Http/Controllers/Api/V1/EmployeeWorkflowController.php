@@ -43,10 +43,11 @@ class EmployeeWorkflowController extends Controller
             ->all();
 
         $employees = $this->queryService->indexGlobal($storeIds, $filters);
+        $canViewSensitive = $this->hasHiringSpecialistPermission($request);
 
         if ($employees instanceof LengthAwarePaginator) {
             $employees->setCollection(
-                $employees->getCollection()->map(fn(Employee $employee) => $this->exposeSensitiveAttributes($employee))
+                $employees->getCollection()->map(fn(Employee $employee) => $this->exposeSensitiveAttributes($employee, $canViewSensitive))
             );
         }
 
@@ -57,21 +58,22 @@ class EmployeeWorkflowController extends Controller
     {
         $store = $this->workflowService->resolveStoreByNumber($storeNumber);
         $employees = $this->queryService->index($store, $request->validated());
+        $canViewSensitive = $this->hasHiringSpecialistPermission($request);
 
         if ($employees instanceof LengthAwarePaginator) {
             $employees->setCollection(
-                $employees->getCollection()->map(fn(Employee $employee) => $this->exposeSensitiveAttributes($employee))
+                $employees->getCollection()->map(fn(Employee $employee) => $this->exposeSensitiveAttributes($employee, $canViewSensitive))
             );
         }
 
         return response()->json($employees);
     }
 
-    public function show(string $storeNumber, Employee $employee): JsonResponse
+    public function show(Request $request, string $storeNumber, Employee $employee): JsonResponse
     {
         $store = $this->workflowService->resolveStoreByNumber($storeNumber);
         $employee = $this->workflowService->loadForStore($store, $employee);
-        $employee = $this->exposeSensitiveAttributes($employee);
+        $employee = $this->exposeSensitiveAttributes($employee, $this->hasHiringSpecialistPermission($request));
 
         return response()->json(['data' => $employee]);
     }
@@ -80,7 +82,7 @@ class EmployeeWorkflowController extends Controller
     {
         $store = $this->workflowService->resolveStoreByNumber($storeNumber);
         $employee = $this->workflowService->loadForStore($store, $employee);
-        $employee = $this->exposeSensitiveAttributes($employee);
+        $employee = $this->exposeSensitiveAttributes($employee, $this->hasHiringSpecialistPermission($request));
 
         $operational = $this->metricQueryService->operationalForEmployee(
             $employee->id,
@@ -154,8 +156,14 @@ class EmployeeWorkflowController extends Controller
         return $this->exportService->exportSeparationStatusHistory($filters['effective_from'] ?? null);
     }
 
-    private function exposeSensitiveAttributes(Employee $employee): Employee
+    private function exposeSensitiveAttributes(Employee $employee, bool $canViewSensitive = true): Employee
     {
+        if (!$canViewSensitive) {
+            $employee->makeHidden(['attachments']);
+
+            return $employee;
+        }
+
         $employee->makeVisible(['ssn']);
 
         if ($employee->relationLoaded('financialInfos')) {
@@ -163,6 +171,31 @@ class EmployeeWorkflowController extends Controller
         }
 
         return $employee;
+    }
+
+    /**
+     * "In any way" — checked against both roles and permissions returned by
+     * AuthTokenStoreScopeMiddleware, matched as a loose substring so any
+     * variant (e.g. "hiring_specialist", "Hiring Specialist (Store)") counts.
+     */
+    private function hasHiringSpecialistPermission(Request $request): bool
+    {
+        $roles = (array) $request->attributes->get('authz_roles', []);
+        $permissions = (array) $request->attributes->get('authz_permissions', []);
+
+        foreach (array_merge($roles, $permissions) as $entry) {
+            if (!is_string($entry)) {
+                continue;
+            }
+
+            $normalized = strtolower(preg_replace('/[^a-z0-9]+/i', ' ', $entry) ?? '');
+
+            if (str_contains($normalized, 'hiring specialist')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
 }
