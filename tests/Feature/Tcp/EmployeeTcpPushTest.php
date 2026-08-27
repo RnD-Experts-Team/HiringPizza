@@ -109,6 +109,44 @@ class EmployeeTcpPushTest extends TestCase
         $this->assertArrayNotHasKey('middleName', $remote);
     }
 
+    public function test_availability_is_never_sent_to_tcp(): void
+    {
+        $employee = app(EmployeeWorkflowService::class)->create($this->store, $this->payload([
+            'availability' => [
+                [
+                    'day_of_week' => 'monday',
+                    'shift_type' => 'AM',
+                    'times' => [['available_from' => '08:00', 'available_to' => '14:00']],
+                ],
+                [
+                    'day_of_week' => 'tuesday',
+                    'shift_type' => 'PM',
+                    'times' => [['available_from' => '16:00', 'available_to' => '22:00']],
+                ],
+            ],
+        ]));
+
+        // Stored locally: scheduling needs it, and OperationsPizza replicates
+        // it over NATS for its own conflict checks.
+        $this->assertSame(2, $employee->availabilityDays()->count());
+
+        $remote = array_values($this->tcp->employees)[0];
+
+        // But it must NOT leave for TCP. TCP's own connector forwards whatever
+        // we send it into Humanity, and Humanity treats stated availability as
+        // a hard lock on when someone may be scheduled — a rigidity we
+        // deliberately keep on our side of the fence. There is no availability
+        // field in TCP's employee schema to send it in, and adding one would
+        // silently export the lock.
+        foreach (array_keys($remote) as $field) {
+            $this->assertStringNotContainsStringIgnoringCase(
+                'avail',
+                $field,
+                "TCP employee payloads must carry no availability data; found '{$field}'."
+            );
+        }
+    }
+
     public function test_employee_id_is_omitted_and_tcp_auto_generates_when_the_flag_is_off(): void
     {
         config(['tcp.assign_employee_id' => false]);

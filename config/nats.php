@@ -55,9 +55,11 @@ return [
         ],
 
         /**
-         * OperationsPizza asks us to push an employee into Humanity when it
+         * OperationsPizza asks us to push an employee into TCP Manager+ when it
          * meets one with no link. We own employee writes, so it cannot do this
-         * itself — see EmployeeHumanitySyncRequestedHandler.
+         * itself — see EmployeeTcpSyncRequestedHandler. (TCP's own connector
+         * then carries the employee into Humanity; nothing of ours writes
+         * Humanity's employee records.)
          */
         [
             'name' => $devMode
