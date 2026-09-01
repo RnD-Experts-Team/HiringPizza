@@ -58,7 +58,7 @@ class EmployeeWorkflowController extends Controller
     {
         $store = $this->workflowService->resolveStoreByNumber($storeNumber);
         $employees = $this->queryService->index($store, $request->validated());
-        $canViewSensitive = $this->hasHiringSpecialistPermission($request);
+        $canViewSensitive = $this->hasHiringSpecialistPermission($request, $store->id);
 
         if ($employees instanceof LengthAwarePaginator) {
             $employees->setCollection(
@@ -73,7 +73,7 @@ class EmployeeWorkflowController extends Controller
     {
         $store = $this->workflowService->resolveStoreByNumber($storeNumber);
         $employee = $this->workflowService->loadForStore($store, $employee);
-        $employee = $this->exposeSensitiveAttributes($employee, $this->hasHiringSpecialistPermission($request));
+        $employee = $this->exposeSensitiveAttributes($employee, $this->hasHiringSpecialistPermission($request, $store->id));
 
         return response()->json(['data' => $employee]);
     }
@@ -82,7 +82,7 @@ class EmployeeWorkflowController extends Controller
     {
         $store = $this->workflowService->resolveStoreByNumber($storeNumber);
         $employee = $this->workflowService->loadForStore($store, $employee);
-        $employee = $this->exposeSensitiveAttributes($employee, $this->hasHiringSpecialistPermission($request));
+        $employee = $this->exposeSensitiveAttributes($employee, $this->hasHiringSpecialistPermission($request, $store->id));
 
         $operational = $this->metricQueryService->operationalForEmployee(
             $employee->id,
@@ -174,16 +174,45 @@ class EmployeeWorkflowController extends Controller
     }
 
     /**
-     * "In any way" — checked against both roles and permissions returned by
-     * AuthTokenStoreScopeMiddleware, matched as a loose substring so any
-     * variant (e.g. "hiring_specialist", "Hiring Specialist (Store)") counts.
+     * "In any way" — checked against global roles/permissions AND the
+     * store-scoped permissions returned by AuthTokenStoreScopeMiddleware
+     * (authz_ext.store.per_store_permissions), matched as a loose substring
+     * so any variant (e.g. "hiring_specialist", "Hiring Specialist (Store)")
+     * counts.
+     *
+     * Most Hiring Specialist grants are store-scoped, not global, so
+     * authz_roles/authz_permissions alone are empty for those users — the
+     * store-scoped permission list from the verify response is what
+     * actually carries "hiring specialist" for them. When $storeId is null
+     * (e.g. the global index spanning multiple stores) any store carrying
+     * the permission counts.
      */
-    private function hasHiringSpecialistPermission(Request $request): bool
+    private function hasHiringSpecialistPermission(Request $request, ?int $storeId = null): bool
     {
-        $roles = (array) $request->attributes->get('authz_roles', []);
-        $permissions = (array) $request->attributes->get('authz_permissions', []);
+        if ($this->containsHiringSpecialist((array) $request->attributes->get('authz_roles', []))
+            || $this->containsHiringSpecialist((array) $request->attributes->get('authz_permissions', []))) {
+            return true;
+        }
 
-        foreach (array_merge($roles, $permissions) as $entry) {
+        $ext = (array) $request->attributes->get('authz_ext', []);
+        $perStorePermissions = (array) data_get($ext, 'store.per_store_permissions', []);
+
+        if ($storeId !== null) {
+            return $this->containsHiringSpecialist((array) ($perStorePermissions[$storeId] ?? []));
+        }
+
+        foreach ($perStorePermissions as $permissions) {
+            if ($this->containsHiringSpecialist((array) $permissions)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function containsHiringSpecialist(array $entries): bool
+    {
+        foreach ($entries as $entry) {
             if (!is_string($entry)) {
                 continue;
             }
