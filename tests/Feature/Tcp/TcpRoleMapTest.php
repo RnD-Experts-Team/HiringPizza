@@ -117,7 +117,9 @@ class TcpRoleMapTest extends TestCase
         $employee = app(EmployeeWorkflowService::class)->create($store, [
             'first_name' => 'Marco',
             'last_name' => 'Rossi',
+            'gender' => 'male',
             'ssn' => '123-45-6789',
+            'employment_type' => 'W2',
             'status_history' => [['status' => 'hired', 'effective_date' => '2026-01-15']],
             'positions' => [['position_id' => Position::query()->firstOrCreate(['label' => 'Crew Member'])->id, 'effective_date' => '2026-01-15']],
         ]);
