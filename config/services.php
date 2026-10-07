@@ -28,25 +28,29 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
-    'slack' => [
-        'notifications' => [
-            'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),
-            'channel' => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
-        ],
-    ],
-
+    /*
+    |--------------------------------------------------------------------------
+    | pizzasys auth server
+    |--------------------------------------------------------------------------
+    | AuthTokenStoreScopeMiddleware POSTs every request's bearer token here.
+    | `service_name` is ONE string doing three jobs in pizzasys and they must
+    | all agree or every request 403s: the `service` field of the verify
+    | request, `service_clients.name`, and `auth_rules.service`. There is
+    | deliberately NO default — a wrong placeholder ("my-service") fails
+    | silently as a 403 on every request, while a blank fails loudly as a 500
+    | naming this config.
+    */
     'auth_server' => [
         'base_url' => env('AUTH_SERVER_BASE_URL', 'http://auth-service.local'),
         'verify_path' => env('AUTH_SERVER_VERIFY_PATH', '/api/v1/auth/token/verify'),
-        'service_name' => env('AUTH_SERVER_SERVICE_NAME', 'my-service'),
+        'service_name' => env('AUTH_SERVER_SERVICE_NAME'),
         'call_token' => env('AUTH_SERVER_CALL_TOKEN', ''),
-
-        'timeout' => (int) env('AUTH_SERVER_TIMEOUT', 3),
-        'retries' => (int) env('AUTH_SERVER_RETRIES', 1),
-        'retry_ms' => (int) env('AUTH_SERVER_RETRY_MS', 100),
-
-        // Redis caching on client side
-        'cache_ttl' => (int) env('AUTH_SERVER_CACHE_TTL', 30),
+        'timeout' => 3,
+        'retries' => 1,
+        'retry_ms' => 100,
     ],
+
+    // Shared-secret header for the export routes (routes/api.php). Blank means
+    // those four routes return 500 — set it or they cannot be used at all.
     'x_secret_key' => env('X_SECRET_KEY'),
 ];
