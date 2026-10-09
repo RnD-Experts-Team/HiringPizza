@@ -202,6 +202,45 @@ class EmployeeTcpPushTest extends TestCase
         $this->assertArrayNotHasKey('phone', $remote);
     }
 
+    public function test_a_full_state_name_is_sent_as_its_postal_code(): void
+    {
+        // Straight from a production rejection: the form sent "Ohio " and TCP
+        // refused the create with "The state must contain only uppercase letters".
+        app(EmployeeWorkflowService::class)->create($this->store, $this->payload([
+            'addresses' => [
+                ['address_name' => 'home', 'address_1' => '1 Main St ', 'city' => 'Cincinnati ', 'state' => 'Ohio ', 'zip_code' => '45225', 'country' => 'USA', 'is_primary' => true],
+            ],
+        ]));
+
+        $remote = array_values($this->tcp->employees)[0];
+        $this->assertSame('OH', $remote['state']);
+    }
+
+    public function test_a_lowercase_state_code_is_uppercased(): void
+    {
+        app(EmployeeWorkflowService::class)->create($this->store, $this->payload([
+            'addresses' => [
+                ['address_name' => 'home', 'address_1' => '1 Main St', 'city' => 'Columbus', 'state' => 'oh', 'zip_code' => '43004', 'is_primary' => true],
+            ],
+        ]));
+
+        $remote = array_values($this->tcp->employees)[0];
+        $this->assertSame('OH', $remote['state']);
+    }
+
+    public function test_an_unrecognisable_state_is_left_out_instead_of_failing_the_create(): void
+    {
+        app(EmployeeWorkflowService::class)->create($this->store, $this->payload([
+            'addresses' => [
+                ['address_name' => 'home', 'address_1' => '1 Main St', 'city' => 'Columbus', 'state' => 'Ohiooo', 'zip_code' => '43004', 'is_primary' => true],
+            ],
+        ]));
+
+        $remote = array_values($this->tcp->employees)[0];
+        $this->assertArrayNotHasKey('state', $remote);
+        $this->assertSame('Columbus', $remote['city']);
+    }
+
     public function test_role_id_is_sent_when_the_store_has_a_mapped_role(): void
     {
         TcpStoreRole::query()->create(['store_number' => '03795-00001', 'role_id' => 'OH', 'source' => 'manual']);

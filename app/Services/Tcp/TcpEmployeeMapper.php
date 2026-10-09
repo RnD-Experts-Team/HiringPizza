@@ -7,6 +7,7 @@ use App\Enums\EmploymentType;
 use App\Models\Employee;
 use App\Models\Store;
 use App\Models\TcpStoreRole;
+use App\Support\UsState;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -300,10 +301,23 @@ class TcpEmployeeMapper
             return null;
         }
 
+        // TCP takes only the uppercase postal code ("OH"), and rejects the
+        // whole create over anything else — a full name like "Ohio" included.
+        // A state we can't resolve is left out rather than sent: a blank state
+        // in TCP beats a hire that can't be saved at all.
+        $state = UsState::toCode($address->state);
+
+        if ($state === null && filled($address->state)) {
+            Log::warning('Address state is not a recognisable US state; sending to TCP without it', [
+                'employee_id' => $employee->id,
+                'state' => $address->state,
+            ]);
+        }
+
         return array_filter([
             'address1' => $address->address_1,
             'city' => $address->city,
-            'state' => $address->state,
+            'state' => $state,
             'zip' => $address->zip_code,
         ], fn ($value) => filled($value));
     }
