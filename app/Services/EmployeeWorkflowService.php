@@ -22,6 +22,7 @@ use App\Models\Store;
 use App\Services\HiringEvents\HiringEventFactory;
 use App\Services\HiringEvents\HiringOutboxService;
 use App\Services\HiringEvents\ModelChangeSet;
+use App\Services\Tcp\TcpEmployeeSyncService;
 use DateTimeInterface;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -71,12 +72,61 @@ class EmployeeWorkflowService
 
             $loadedEmployee = $this->loadEmployee($employee->fresh());
 
+            // Push to TCP BEFORE emitting the event. The payload can only
+            // be built now, because the scheduling-relevant fields (email,
+            // wage, position, store, hire date) live in the child rows the
+            // sync* calls above just wrote.
+            //
+            // A failure throws, which rolls this whole transaction back — no
+            // orphan employee, no event, nothing for anyone to reconcile.
+            $this->pushToExternalSystems($loadedEmployee, $store);
+            $loadedEmployee = $this->loadEmployee($employee->fresh());
+
             $this->recordEvent('hiring.v1.employee.created', [
                 'employee' => $this->snapshotEmployee($loadedEmployee),
                 'store_number' => $store->store_number,
             ], $request);
 
             return $loadedEmployee;
+        });
+    }
+
+    /**
+     * Push the employee to the external systems that must know about them.
+     *
+     * TCP Manager+ is the system of record for employees, and its own connector
+     * carries them into Humanity every 5 minutes:
+     *
+     *     HiringPizza -> TCP Manager+ -> (TCP connector) -> Humanity
+     *
+     * An employee who is not in TCP cannot clock in and cannot be scheduled, so
+     * the local write is not allowed to succeed without it. A throw here rolls
+     * the whole transaction back.
+     *
+     * We never write Humanity's employee records — TCP's connector owns them,
+     * and a second writer is how duplicate people get created.
+     */
+    private function pushToExternalSystems(Employee $employee, Store $store): void
+    {
+        app(TcpEmployeeSyncService::class)->upsert($employee, $store);
+    }
+
+    /**
+     * Delete a stored file only once the surrounding transaction commits.
+     *
+     * The sync* helpers run inside DB::transaction, and the Humanity push can
+     * now roll that transaction back. A rollback restores the database rows but
+     * cannot un-delete a file, so deleting eagerly would leave an employee
+     * whose attachments and photo have silently vanished.
+     */
+    private function deleteFileAfterCommit(?string $path): void
+    {
+        if (blank($path)) {
+            return;
+        }
+
+        DB::afterCommit(function () use ($path): void {
+            Storage::disk('public')->delete($path);
         });
     }
 
@@ -153,6 +203,11 @@ class EmployeeWorkflowService
             ]);
 
             $loadedEmployee = $this->loadEmployee($employee->fresh());
+
+            // Same ordering as create(): external systems first, rollback on failure.
+            $this->pushToExternalSystems($loadedEmployee, $store);
+            $loadedEmployee = $this->loadEmployee($employee->fresh());
+
             $afterSnapshot = $this->snapshotEmployee($loadedEmployee);
 
             $changedFields = ModelChangeSet::fromArrays(
@@ -197,6 +252,11 @@ class EmployeeWorkflowService
             ]);
 
             $loadedEmployee = $this->loadEmployee($employee->fresh());
+
+            // Same ordering as create(): external systems first, rollback on failure.
+            $this->pushToExternalSystems($loadedEmployee, $store);
+            $loadedEmployee = $this->loadEmployee($employee->fresh());
+
             $afterSnapshot = $this->snapshotEmployee($loadedEmployee);
 
             $changedFields = ModelChangeSet::fromArrays(
@@ -237,7 +297,12 @@ class EmployeeWorkflowService
         }
     }
 
-    private function loadEmployee(Employee $employee): Employee
+    /**
+     * Public because `hiring:republish-employees` builds the same snapshot for
+     * its backfill events. This eager-load list IS the wire shape consumed by
+     * OperationsPizza, so there must be exactly one copy of it.
+     */
+    public function loadEmployee(Employee $employee): Employee
     {
         $employee->load([
             'statusHistories.store',
@@ -468,7 +533,7 @@ class EmployeeWorkflowService
 
         if ($row === null) {
             if ($existingObsession?->image_path) {
-                Storage::disk('public')->delete($existingObsession->image_path);
+                $this->deleteFileAfterCommit($existingObsession->image_path);
             }
 
             EmployeeObsession::query()->where('employee_id', $employee->id)->delete();
@@ -480,7 +545,7 @@ class EmployeeWorkflowService
 
         if (isset($row['image']) && $row['image'] instanceof UploadedFile) {
             if ($existingObsession?->image_path) {
-                Storage::disk('public')->delete($existingObsession->image_path);
+                $this->deleteFileAfterCommit($existingObsession->image_path);
             }
 
             $imagePath = $row['image']->store('employee-obsessions/' . $employee->id, 'public');
@@ -531,7 +596,7 @@ class EmployeeWorkflowService
 
         foreach ($existingAttachments as $attachment) {
             if ($attachment->file_path) {
-                Storage::disk('public')->delete($attachment->file_path);
+                $this->deleteFileAfterCommit($attachment->file_path);
             }
         }
 
@@ -576,7 +641,11 @@ class EmployeeWorkflowService
         PublishOutboxEventJob::dispatch($row->id);
     }
 
-    private function snapshotEmployee(Employee $employee): array
+    /**
+     * Public for the same reason as loadEmployee(): the republish backfill must
+     * emit a byte-identical payload to a real `employee.created`.
+     */
+    public function snapshotEmployee(Employee $employee): array
     {
         return $employee->toArray();
     }
