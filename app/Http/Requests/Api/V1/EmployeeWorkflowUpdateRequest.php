@@ -2,12 +2,15 @@
 
 namespace App\Http\Requests\Api\V1;
 
+use App\Http\Requests\Api\V1\Concerns\NormalizesAddressStates;
 use App\Models\Employee;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 class EmployeeWorkflowUpdateRequest extends FormRequest
 {
+    use NormalizesAddressStates;
+
     public function authorize(): bool
     {
         return true;
@@ -68,7 +71,7 @@ class EmployeeWorkflowUpdateRequest extends FormRequest
             'addresses.*.address_1' => ['required', 'string', 'max:255'],
             'addresses.*.address_2' => ['nullable', 'string', 'max:255'],
             'addresses.*.city' => ['required', 'string', 'max:100'],
-            'addresses.*.state' => ['required', 'string', 'max:100'],
+            'addresses.*.state' => $this->stateRules(),
             'addresses.*.zip_code' => ['required', 'string', 'max:20'],
             'addresses.*.country' => ['sometimes', 'string', 'max:100'],
             'addresses.*.is_primary' => ['sometimes', 'boolean'],
