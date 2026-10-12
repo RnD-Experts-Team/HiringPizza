@@ -208,6 +208,11 @@ class TcpEmployeeMapper
      * THIS store whose description starts with the position label,
      * case-insensitive.
      *
+     * A variant position ("Assistant Manager - AT") has no code of its own in
+     * TCP, so when the full label matches nothing it is retried with its
+     * tcp.position_variant_suffixes suffix removed. The full label is tried
+     * first, so a variant that does get its own code in TCP keeps it.
+     *
      * Throws instead of returning null: a missing defaultJobCode used to
      * reach TCP silently and come back as an opaque "The cell must have a
      * value". This isn't a new failure mode — that create already failed and
@@ -220,12 +225,11 @@ class TcpEmployeeMapper
         $storeNumber = $store?->store_number;
 
         if ($label !== null && $storeNumber !== null) {
-            foreach ($jobCodeCatalog as $code) {
-                if (($code['store_number'] ?? null) === (string) $storeNumber
-                    && ($code['clockable'] ?? false)
-                    && stripos((string) $code['description'], (string) $label) === 0
-                ) {
-                    return (string) $code['id'];
+            foreach (array_unique([(string) $label, $this->withoutVariantSuffix((string) $label)]) as $name) {
+                $id = $this->matchJobCode($name, (string) $storeNumber, $jobCodeCatalog);
+
+                if ($id !== null) {
+                    return $id;
                 }
             }
         }
@@ -239,8 +243,35 @@ class TcpEmployeeMapper
         }
 
         throw new TcpJobCodeNotMappedException($label !== null
-            ? "No TCP job code matches store {$storeNumber} for position '{$label}'. Run php artisan tcp:sync-job-codes, or set TCP_DEFAULT_JOB_CODE."
+            ? "No TCP job code matches store {$storeNumber} for position '{$label}'. Run php artisan tcp:sync-job-codes, add the label's variant suffix to TCP_POSITION_VARIANT_SUFFIXES, or set TCP_DEFAULT_JOB_CODE."
             : 'Employee has no position assigned, so no TCP job code can be resolved. Assign a position before creating, or set TCP_DEFAULT_JOB_CODE.');
+    }
+
+    /** A clockable code for this store whose description starts with $name. */
+    private function matchJobCode(string $name, string $storeNumber, array $jobCodeCatalog): ?string
+    {
+        foreach ($jobCodeCatalog as $code) {
+            if (($code['store_number'] ?? null) === $storeNumber
+                && ($code['clockable'] ?? false)
+                && stripos((string) $code['description'], $name) === 0
+            ) {
+                return (string) $code['id'];
+            }
+        }
+
+        return null;
+    }
+
+    /** "Assistant Manager - AT" -> "Assistant Manager"; unchanged if no configured suffix ends it. */
+    private function withoutVariantSuffix(string $label): string
+    {
+        $suffixes = array_map(fn ($s) => preg_quote((string) $s, '/'), (array) config('tcp.position_variant_suffixes'));
+
+        if ($suffixes === []) {
+            return $label;
+        }
+
+        return trim((string) preg_replace('/\s*-\s*(?:' . implode('|', $suffixes) . ')\s*$/i', '', $label));
     }
 
     /**

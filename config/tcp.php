@@ -56,6 +56,16 @@ return [
     'default_job_code' => env('TCP_DEFAULT_JOB_CODE'),
 
     /*
+     | Dashboard positions can carry a variant suffix that TCP's job codes
+     | don't: "Assistant Manager - AT" should clock in as the store's
+     | "Assistant Manager - 3795-04" code. When the full label matches no code,
+     | TcpEmployeeMapper retries with one of these trailing " - <suffix>"
+     | parts removed. Comma-separated, case-insensitive.
+     */
+    'position_variant_suffixes' => array_values(array_filter(array_map('trim',
+        explode(',', (string) env('TCP_POSITION_VARIANT_SUFFIXES', 'AT'))))),
+
+    /*
      | Whether WE assign employeeId on create, vs leaving it out and letting
      | TCP auto-generate the next available id (its own documented behaviour
      | for a null value). The UI requiring manual entry when adding an
