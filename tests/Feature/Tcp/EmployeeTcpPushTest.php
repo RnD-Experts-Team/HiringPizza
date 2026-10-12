@@ -459,6 +459,58 @@ class EmployeeTcpPushTest extends TestCase
         $this->assertSame(0, Employee::count());
     }
 
+    public function test_a_variant_position_uses_its_base_positions_job_code(): void
+    {
+        config(['tcp.default_job_code' => null]);
+
+        app(EmployeeWorkflowService::class)->create($this->store, $this->payload([
+            'positions' => [['position_id' => $this->positionId('Crew Member - AT'), 'effective_date' => '2026-01-15']],
+        ]));
+
+        $remote = array_values($this->tcp->employees)[0];
+        $this->assertSame(37950101, $remote['defaultJobCode']);
+    }
+
+    public function test_the_variant_suffix_is_matched_case_insensitively(): void
+    {
+        config(['tcp.default_job_code' => null]);
+
+        app(EmployeeWorkflowService::class)->create($this->store, $this->payload([
+            'positions' => [['position_id' => $this->positionId('Manager - at'), 'effective_date' => '2026-01-15']],
+        ]));
+
+        $remote = array_values($this->tcp->employees)[0];
+        $this->assertSame(37950103, $remote['defaultJobCode']);
+    }
+
+    public function test_a_variant_with_its_own_tcp_job_code_keeps_it(): void
+    {
+        TcpJobCode::query()->create(['tcp_job_code_id' => '37950109', 'description' => 'Crew Member - AT - 3795-01', 'store_number' => '03795-00001', 'clockable' => true, 'is_active' => true]);
+
+        app(EmployeeWorkflowService::class)->create($this->store, $this->payload([
+            'positions' => [['position_id' => $this->positionId('Crew Member - AT'), 'effective_date' => '2026-01-15']],
+        ]));
+
+        $remote = array_values($this->tcp->employees)[0];
+        $this->assertSame(37950109, $remote['defaultJobCode']);
+    }
+
+    public function test_an_unconfigured_suffix_is_not_stripped(): void
+    {
+        config(['tcp.default_job_code' => null]);
+
+        try {
+            app(EmployeeWorkflowService::class)->create($this->store, $this->payload([
+                'positions' => [['position_id' => $this->positionId('Crew Member - XY'), 'effective_date' => '2026-01-15']],
+            ]));
+            $this->fail('Expected TcpJobCodeNotMappedException.');
+        } catch (TcpJobCodeNotMappedException) {
+            // expected
+        }
+
+        $this->assertSame(0, Employee::count());
+    }
+
     private function positionId(string $label): int
     {
         return (int) \App\Models\Position::query()->firstOrCreate(['label' => $label])->id;
