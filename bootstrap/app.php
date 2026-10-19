@@ -4,6 +4,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use App\Http\Middleware\AuthTokenStoreScopeMiddleware;
+use App\Http\Middleware\ObservableThrottleRequests;
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         api: __DIR__ . '/../routes/api.php',
@@ -15,6 +16,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'auth.token.store' => AuthTokenStoreScopeMiddleware::class,
             'auth.secret.key' => \App\Http\Middleware\CheckSecretKeyMiddleware::class,
+            'throttle' => ObservableThrottleRequests::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

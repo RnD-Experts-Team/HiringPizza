@@ -12,8 +12,13 @@ class ExportHiringBernardTempService
     /**
      * Export employees to CSV format.
      *
-     * If $store is provided, export only employees assigned to that store.
-     * If $store is null, export all employees.
+     * Final export logic:
+     * - Status is based on the latest status effective_date.
+     * - Status Effective Date is the latest status effective_date.
+     * - Hired Date is a separate column using the oldest hired / rehired / OJE date.
+     * - Store # is based on the latest employee_stores effective_date.
+     * - Store-filtered exports compare against the latest employee_stores store, not historical stores.
+     * - Pay, position, marital status, and financial info use their own latest effective_date.
      */
     public function export(?Store $store = null): StreamedResponse
     {
@@ -39,15 +44,15 @@ class ExportHiringBernardTempService
                     'attachments',
                     'obsession',
                 ])
-                ->when($store, function ($query) use ($store): void {
-                    $query->whereHas('stores', function ($storeQuery) use ($store): void {
-                        $storeQuery->where('store_id', $store->id);
-                    });
-                })
                 ->orderBy('id');
 
             foreach ($query->cursor() as $employee) {
                 /** @var Employee $employee */
+
+                if ($store && !$this->employeeBelongsToExportStore($employee, $store)) {
+                    continue;
+                }
+
                 fputcsv($handle, $this->buildRow($employee));
             }
 
@@ -72,12 +77,12 @@ class ExportHiringBernardTempService
 
             'Status',
             'Status Effective Date',
+            'Hired Date',
 
             'Store #',
             'Position',
             'Marital Status',
 
-            'Hired Date',
             'Birthdate',
 
             'Base Pay',
@@ -130,13 +135,13 @@ class ExportHiringBernardTempService
             $this->enumValue($employee->employment_type),
 
             $this->getStatusValue($latestStatusHistory),
-            $this->getStatusBasedEffectiveDate($employee, $latestStatusHistory),
+            $this->getStatusEffectiveDate($latestStatusHistory),
+            $this->getHiredDate($employee),
 
             $this->getStoreNumber($latestStore),
             $this->getPositionLabel($latestPosition),
             $this->getMaritalStatusLabel($latestMarital),
 
-            $this->getOldestHiredDate($employee),
             $this->getBirthdate($employee),
 
             $this->safeAttribute($latestPayHistory, 'base_pay'),
@@ -166,6 +171,15 @@ class ExportHiringBernardTempService
         ]);
     }
 
+    private function employeeBelongsToExportStore(Employee $employee, Store $store): bool
+    {
+        $latestStore = $this->latestByEffectiveDate($employee->stores);
+
+        $exportStoreNumber = $this->getStoreNumber($latestStore);
+
+        return (string) $exportStoreNumber === (string) $store->store_number;
+    }
+
     private function getLatestStatusHistory(Employee $employee): mixed
     {
         return $employee->statusHistories()
@@ -174,24 +188,10 @@ class ExportHiringBernardTempService
             ->first();
     }
 
-    private function getStatusBasedEffectiveDate(Employee $employee, mixed $latestStatusHistory): string
+    private function getStatusEffectiveDate(mixed $latestStatusHistory): string
     {
         if (!$latestStatusHistory) {
             return '';
-        }
-
-        $latestStatus = $this->normalizeStatus(
-            $this->safeAttribute($latestStatusHistory, 'status')
-        );
-
-        if ($this->isActiveHiringStatus($latestStatus)) {
-            return $this->getOldestHiredDate($employee);
-        }
-
-        if ($this->isInactiveStatus($latestStatus)) {
-            return $this->formatDate(
-                $this->safeAttribute($latestStatusHistory, 'effective_date')
-            );
         }
 
         return $this->formatDate(
@@ -199,11 +199,11 @@ class ExportHiringBernardTempService
         );
     }
 
-    private function getOldestHiredDate(Employee $employee): string
+    private function getHiredDate(Employee $employee): string
     {
-        $oldestHiredHistory = $employee->statusHistories
+        $oldestHiringStatus = $employee->statusHistories
             ->filter(function ($statusHistory): bool {
-                return $this->isActiveHiringStatus(
+                return $this->isHiringStatus(
                     $this->normalizeStatus(
                         $this->safeAttribute($statusHistory, 'status')
                     )
@@ -221,23 +221,18 @@ class ExportHiringBernardTempService
             })
             ->first();
 
-        if (!$oldestHiredHistory) {
+        if (!$oldestHiringStatus) {
             return '';
         }
 
         return $this->formatDate(
-            $this->safeAttribute($oldestHiredHistory, 'effective_date')
+            $this->safeAttribute($oldestHiringStatus, 'effective_date')
         );
     }
 
-    private function isActiveHiringStatus(?string $status): bool
+    private function isHiringStatus(?string $status): bool
     {
         return in_array($status, ['hired', 'rehired'], true);
-    }
-
-    private function isInactiveStatus(?string $status): bool
-    {
-        return in_array($status, ['terminated', 'resigned'], true);
     }
 
     private function normalizeStatus(mixed $status): ?string
@@ -408,7 +403,6 @@ class ExportHiringBernardTempService
          * If the current APP_KEY does not match the key used to encrypt the data,
          * Laravel throws: "The MAC is invalid."
          */
-
         $parts = [
             'payment_method' => $this->enumValue($this->safeAttribute($financialInfo, 'payment_method')),
             'bank_name' => $this->safeAttribute($financialInfo, 'bank_name'),
