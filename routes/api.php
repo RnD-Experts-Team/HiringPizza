@@ -12,25 +12,30 @@ use App\Http\Controllers\Api\V1\ShirtMilestoneController;
 use App\Http\Controllers\Api\V1\WorkflowRequestController;
 use Illuminate\Support\Facades\Route;
 
+/*
+| Rate limits (AppServiceProvider): `throttle:api` sits next to every
+| auth.token.store and runs ahead of the pizzasys call. Reports add their own
+| tier on top; the auth.secret.key exports are counted per secret + IP.
+*/
 
 Route::get('employees/export/csv', [EmployeeWorkflowController::class, 'export'])
-    ->name('api.v1.stores.employees.export')->middleware('auth.secret.key');
+    ->name('api.v1.stores.employees.export')->middleware(['throttle:service-secret', 'throttle:api-export', 'auth.secret.key']);
 
 Route::get('/average-hourly-pay/{store}/{date}', [ManagerDashboardController::class, 'averageHourlyPay'])
-    ->middleware('auth.token.store');
+    ->middleware(['throttle:api', 'throttle:api-heavy', 'auth.token.store']);
 
 Route::get('high-hours-employees/{store}/{date}', [ManagerDashboardController::class, 'highHoursEmployees'])
-    ->middleware('auth.token.store');
+    ->middleware(['throttle:api', 'throttle:api-heavy', 'auth.token.store']);
 
 Route::get('employees/tenure/export/csv', [EmployeeWorkflowController::class, 'exportTenure'])
-    ->name('api.v1.employees.tenure.export')->middleware('auth.secret.key');
+    ->name('api.v1.employees.tenure.export')->middleware(['throttle:service-secret', 'throttle:api-export', 'auth.secret.key']);
 
 Route::get('employees/separation-statuses/export/csv', [EmployeeWorkflowController::class, 'exportSeparationStatusHistory'])
-    ->name('api.v1.employees.separation-statuses.export')->middleware('auth.secret.key');
+    ->name('api.v1.employees.separation-statuses.export')->middleware(['throttle:service-secret', 'throttle:api-export', 'auth.secret.key']);
 
-Route::get('employees/hiring-temp-bernard/export/csv', [EmployeeWorkflowController::class, 'exportHiringTempBernard'])->name('api.v1.employees.hiring-temp-bernard.export')->middleware('auth.secret.key');
+Route::get('employees/hiring-temp-bernard/export/csv', [EmployeeWorkflowController::class, 'exportHiringTempBernard'])->name('api.v1.employees.hiring-temp-bernard.export')->middleware(['throttle:service-secret', 'throttle:api-export', 'auth.secret.key']);
 
-Route::prefix('v1')->middleware('auth.token.store')->group(function (): void {
+Route::prefix('v1')->middleware(['throttle:api', 'auth.token.store'])->group(function (): void {
     Route::post('employee-metrics/import', [EmployeeMetricController::class, 'import'])
         ->name('api.v1.employee-metrics.import');
 
@@ -45,11 +50,13 @@ Route::prefix('v1')->middleware('auth.token.store')->group(function (): void {
 
     // Multi-store date-range report: stores[] query param (or stores[]=all), start_date, end_date.
     Route::get('reports', [ManagerDashboardController::class, 'reportsMultiStore'])
+        ->middleware('throttle:api-heavy-multi')
         ->name('api.v1.reports.multi');
 
     // Combined manager-dashboard page report (one call instead of three).
     Route::get('reports/{store}/{date}', [ManagerDashboardController::class, 'reports'])
         ->where(['date' => '[0-9]{4}-[0-9]{2}-[0-9]{2}'])
+        ->middleware('throttle:api-heavy')
         ->name('api.v1.reports.show');
 
     Route::get('employees', [EmployeeWorkflowController::class, 'indexGlobal'])
@@ -80,6 +87,7 @@ Route::prefix('v1')->middleware('auth.token.store')->group(function (): void {
             // Full employee info + operational history (all metric/column values
             // ever recorded for the employee). Pass ?paginated=1 to paginate.
             Route::get('employees/{employee}/operational', [EmployeeWorkflowController::class, 'operational'])
+                ->middleware('throttle:api-heavy')
                 ->name('api.v1.stores.employees.operational');
 
             Route::post('employees/{employee}', [EmployeeWorkflowController::class, 'update'])
@@ -109,6 +117,7 @@ Route::prefix('v1')->middleware('auth.token.store')->group(function (): void {
             // Override the trend window with ?trend_weeks= (default 6, max 12).
             Route::get('labor/{date}', [LaborController::class, 'show'])
                 ->where(['date' => '[0-9]{4}-[0-9]{2}-[0-9]{2}'])
+                ->middleware('throttle:api-heavy')
                 ->name('api.v1.stores.labor.show');
 
             // Hiring Request Workflow
