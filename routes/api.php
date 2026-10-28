@@ -71,6 +71,10 @@ Route::prefix('v1')->middleware(['throttle:api', 'auth.token.store'])->group(fun
     // side's, which the auth server grants by role, not per store.
     Route::get('store-shirt-milestones', [ShirtMilestoneController::class, 'indexForStores'])
         ->name('api.v1.store-shirt-milestones.index');
+    // Unified calendar feed. Stores are in the query (stores=a,b), not the path:
+    // the pizzasys rule must read store_id_sources.query ["stores"] with policy "all".
+    Route::get('calendar/feed', \App\Http\Controllers\Api\V1\CalendarFeedController::class)
+        ->name('api.v1.calendar.feed');
 
     Route::prefix('stores/{storeId}')
         ->where(['storeId' => '[A-Za-z0-9_-]+'])
