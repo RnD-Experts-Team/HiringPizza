@@ -33,6 +33,11 @@ Route::get('employees/tenure/export/csv', [EmployeeWorkflowController::class, 'e
 Route::get('employees/separation-statuses/export/csv', [EmployeeWorkflowController::class, 'exportSeparationStatusHistory'])
     ->name('api.v1.employees.separation-statuses.export')->middleware(['throttle:service-secret', 'throttle:api-export', 'auth.secret.key']);
 
+// Every hire (hired/rehired entry) with phone, avg weekly hours over the first 8
+// weeks and latest hours. Optional: store_number, from, to (the hire date range).
+Route::get('employees/hire-hours/export/csv', [EmployeeWorkflowController::class, 'exportHireHours'])
+    ->name('api.v1.employees.hire-hours.export')->middleware(['throttle:service-secret', 'throttle:api-export', 'auth.secret.key']);
+
 Route::get('employees/hiring-temp-bernard/export/csv', [EmployeeWorkflowController::class, 'exportHiringTempBernard'])->name('api.v1.employees.hiring-temp-bernard.export')->middleware(['throttle:service-secret', 'throttle:api-export', 'auth.secret.key']);
 
 Route::prefix('v1')->middleware(['throttle:api', 'auth.token.store'])->group(function (): void {
@@ -71,6 +76,10 @@ Route::prefix('v1')->middleware(['throttle:api', 'auth.token.store'])->group(fun
     // side's, which the auth server grants by role, not per store.
     Route::get('store-shirt-milestones', [ShirtMilestoneController::class, 'indexForStores'])
         ->name('api.v1.store-shirt-milestones.index');
+    // Unified calendar feed. Stores are in the query (stores=a,b), not the path:
+    // the pizzasys rule must read store_id_sources.query ["stores"] with policy "all".
+    Route::get('calendar/feed', \App\Http\Controllers\Api\V1\CalendarFeedController::class)
+        ->name('api.v1.calendar.feed');
 
     Route::prefix('stores/{storeId}')
         ->where(['storeId' => '[A-Za-z0-9_-]+'])
