@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\EmployeeDestroyRequest;
 use App\Http\Requests\Api\V1\EmployeeGlobalIndexRequest;
+use App\Http\Requests\Api\V1\EmployeeHireHoursExportRequest;
 use App\Http\Requests\Api\V1\EmployeeIndexRequest;
 use App\Http\Requests\Api\V1\EmployeeOperationalRequest;
 use App\Http\Requests\Api\V1\EmployeeSeparationStatusExportRequest;
@@ -14,6 +15,7 @@ use App\Http\Requests\Api\V1\EmployeeWorkflowStoreRequest;
 use App\Http\Requests\Api\V1\EmployeeWorkflowUpdateRequest;
 use App\Models\Employee;
 use App\Services\EmployeeExportService;
+use App\Services\EmployeeHireHoursExportService;
 use App\Services\EmployeeMetricQueryService;
 use App\Services\EmployeeQueryService;
 use App\Services\EmployeeWorkflowService;
@@ -30,7 +32,8 @@ class EmployeeWorkflowController extends Controller
         private readonly EmployeeQueryService $queryService,
         private readonly EmployeeMetricQueryService $metricQueryService,
         private readonly EmployeeExportService $exportService,
-        private readonly ExportHiringBernardTempService $exportHiringBernardTempService
+        private readonly ExportHiringBernardTempService $exportHiringBernardTempService,
+        private readonly EmployeeHireHoursExportService $hireHoursExportService
     ) {
     }
 
@@ -140,6 +143,17 @@ class EmployeeWorkflowController extends Controller
         }
 
         return $this->exportHiringBernardTempService->export($store);
+    }
+
+    public function exportHireHours(EmployeeHireHoursExportRequest $request): StreamedResponse
+    {
+        $filters = $request->validated();
+
+        return $this->hireHoursExportService->export(
+            $filters['store_number'] ?? null,
+            $filters['from'] ?? null,
+            $filters['to'] ?? null,
+        );
     }
 
     public function exportTenure(EmployeeTenureExportRequest $request): StreamedResponse

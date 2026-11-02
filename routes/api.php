@@ -33,6 +33,11 @@ Route::get('employees/tenure/export/csv', [EmployeeWorkflowController::class, 'e
 Route::get('employees/separation-statuses/export/csv', [EmployeeWorkflowController::class, 'exportSeparationStatusHistory'])
     ->name('api.v1.employees.separation-statuses.export')->middleware(['throttle:service-secret', 'throttle:api-export', 'auth.secret.key']);
 
+// Every hire (hired/rehired entry) with phone, avg weekly hours over the first 8
+// weeks and latest hours. Optional: store_number, from, to (the hire date range).
+Route::get('employees/hire-hours/export/csv', [EmployeeWorkflowController::class, 'exportHireHours'])
+    ->name('api.v1.employees.hire-hours.export')->middleware(['throttle:service-secret', 'throttle:api-export', 'auth.secret.key']);
+
 Route::get('employees/hiring-temp-bernard/export/csv', [EmployeeWorkflowController::class, 'exportHiringTempBernard'])->name('api.v1.employees.hiring-temp-bernard.export')->middleware(['throttle:service-secret', 'throttle:api-export', 'auth.secret.key']);
 
 Route::prefix('v1')->middleware(['throttle:api', 'auth.token.store'])->group(function (): void {
