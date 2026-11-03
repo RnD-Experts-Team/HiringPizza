@@ -70,6 +70,17 @@ class TcpEmployeeMapper
             // with the next candidate if this one is already taken.
             if (config('tcp.assign_employee_id', true)) {
                 $payload['employeeId'] = (string) ($employeeIdOverride ?? $this->candidateEmployeeId($employee));
+
+                // networkId is "<employeeId>@<suffix>" on this account. TCP
+                // normally generates it, but a create was rejected with "The
+                // networkId must have a value", so send it whenever we know
+                // the employeeId. Create only: an update must not overwrite
+                // the networkId of a record we adopted via exportCode.
+                $suffix = (string) config('tcp.network_id_suffix');
+
+                if ($suffix !== '') {
+                    $payload['networkId'] = $payload['employeeId'] . '@' . ltrim($suffix, '@');
+                }
             }
 
             $hireDate = $this->latestHireDate($employee);
