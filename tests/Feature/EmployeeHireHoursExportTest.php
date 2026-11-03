@@ -65,6 +65,8 @@ class EmployeeHireHoursExportTest extends TestCase
             [1, '2026-02-23', 16, 999],   // inside the window, which ends 2026-03-01
             [1, '2026-03-02', 100, 999],  // outside the first window
             [1, '2026-09-01', 24, 999],   // second stint window
+            [1, '2026-09-07', 50, 999],   // second stint; the Monday before the last-8-weeks window
+            [1, '2026-09-08', 16, 999],   // second stint; first day of the last-8-weeks window
             [1, '2026-10-27', 32, 999],   // latest date in the data
             [2, '2026-10-20', 8, 999],    // not on the latest date
         ];
@@ -102,13 +104,13 @@ class EmployeeHireHoursExportTest extends TestCase
 
         $this->assertSame([
             'Store Number', 'Full Name', 'Phone Number', 'Date of Hire', 'Times Shown',
-            'Avg Hours Per Week (First 8 Weeks)', 'Latest Hours',
+            'Avg Hours Per Week (First 8 Weeks)', 'Latest Hours', 'Avg Hours Per Week (Last 8 Weeks)',
         ], $rows[0]);
 
         $this->assertSame([
-            ['03795-00044', 'Ann Marie Lee', '555-0002', '2026-01-05', '2', '7', '32'],
-            ['03795-00042', 'Ann Marie Lee', '555-0002', '2026-09-01', '2', '3', '32'],
-            ['03795-00042', 'Bob Ray', '', '2026-09-01', '1', '1', '0'],
+            ['03795-00044', 'Ann Marie Lee', '555-0002', '2026-01-05', '2', '7', '32', '6'],
+            ['03795-00042', 'Ann Marie Lee', '555-0002', '2026-09-01', '2', '11.25', '32', '6'],
+            ['03795-00042', 'Bob Ray', '', '2026-09-01', '1', '1', '0', '1'],
         ], array_slice($rows, 1));
     }
 
@@ -122,7 +124,7 @@ class EmployeeHireHoursExportTest extends TestCase
         $rows = $this->csv('?store_number=03795-00044');
 
         $this->assertCount(2, $rows);
-        $this->assertSame(['03795-00044', 'Ann Marie Lee', '555-0002', '2026-01-05', '1', '7', '32'], $rows[1]);
+        $this->assertSame(['03795-00044', 'Ann Marie Lee', '555-0002', '2026-01-05', '1', '7', '32', '6'], $rows[1]);
     }
 
     public function test_date_range_is_inclusive_and_open_ended_sides_are_allowed(): void
