@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\ContactType;
 use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -27,6 +28,10 @@ class EmployeeHireHoursExportService
      * Average hours is the hours total from the hire date through the following
      * 8 weeks (56 days), divided by 8. Latest hours is the employee's hours on
      * the newest date that has any hours entry at all, or 0 if they have none there.
+     *
+     * Avg hours (last 8 weeks) ends at the employee's last date with hours above 0:
+     * the business week (Tuesday to Monday) holding that date plus the 7 weeks before
+     * it, divided by 8. The same on every row of an employee.
      */
     public function export(?string $storeNumber = null, ?string $from = null, ?string $to = null): StreamedResponse
     {
@@ -43,6 +48,7 @@ class EmployeeHireHoursExportService
                 'Times Shown',
                 'Avg Hours Per Week (First 8 Weeks)',
                 'Latest Hours',
+                'Avg Hours Per Week (Last 8 Weeks)',
             ]);
 
             $hires = $this->hires($storeNumber, $from, $to);
@@ -59,6 +65,7 @@ class EmployeeHireHoursExportService
                     $latestHours = $latestDate === null
                         ? 0.0
                         : (float) $employeeHours->where('date', $latestDate)->sum('hours');
+                    $lastEightWeeksAverage = $this->lastEightWeeksAverage($employeeHours);
 
                     foreach ($employeeHires as $hire) {
                         fputcsv($handle, [
@@ -69,6 +76,7 @@ class EmployeeHireHoursExportService
                             $timesShown[$employeeId],
                             $this->averageWeeklyHours($employeeHours, $hire->hire_date),
                             round($latestHours, 2),
+                            $lastEightWeeksAverage,
                         ]);
                     }
                 }
@@ -146,6 +154,29 @@ class EmployeeHireHoursExportService
 
         $total = $employeeHours
             ->filter(fn ($row) => $row->date >= $hireDate && $row->date <= $end)
+            ->sum('hours');
+
+        return round($total / self::WINDOW_WEEKS, 2);
+    }
+
+    /**
+     * Hours over the business week of the last date with hours, and the 7 weeks
+     * before it, per week. 0 for someone who never had hours.
+     */
+    private function lastEightWeeksAverage(Collection $employeeHours): float
+    {
+        $lastDate = $employeeHours->where('hours', '>', 0)->max('date');
+
+        if ($lastDate === null) {
+            return 0.0;
+        }
+
+        $lastWeekStart = CarbonImmutable::parse($lastDate)->startOfWeek(CarbonInterface::TUESDAY);
+        $start = $lastWeekStart->subWeeks(self::WINDOW_WEEKS - 1)->toDateString();
+        $end = $lastWeekStart->addDays(6)->toDateString();
+
+        $total = $employeeHours
+            ->filter(fn ($row) => $row->date >= $start && $row->date <= $end)
             ->sum('hours');
 
         return round($total / self::WINDOW_WEEKS, 2);
