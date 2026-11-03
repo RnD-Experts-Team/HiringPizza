@@ -185,6 +185,57 @@ class EmployeeTcpPushTest extends TestCase
         $this->assertSame(0, Employee::count());
     }
 
+    public function test_network_id_is_the_employee_id_plus_the_account_suffix(): void
+    {
+        $employee = app(EmployeeWorkflowService::class)->create($this->store, $this->payload());
+
+        $remote = array_values($this->tcp->employees)[0];
+        $this->assertSame((9000000 + $employee->id * 100) . '@lce03795', $remote['networkId']);
+    }
+
+    public function test_network_id_follows_the_retried_employee_id_candidate(): void
+    {
+        config(['tcp.writes_enabled' => false]);
+        $employee = app(EmployeeWorkflowService::class)->create($this->store, $this->payload());
+
+        $base = app(\App\Services\Tcp\TcpEmployeeMapper::class)->candidateEmployeeId($employee);
+        $this->tcp->seed((string) $base);
+
+        config(['tcp.writes_enabled' => true]);
+        app(\App\Services\Tcp\TcpEmployeeSyncService::class)->upsert($employee, $this->store);
+
+        $this->assertSame(($base + 1) . '@lce03795', $this->tcp->employees[(string) ($base + 1)]['networkId']);
+    }
+
+    public function test_network_id_is_not_sent_when_tcp_assigns_the_employee_id(): void
+    {
+        config(['tcp.assign_employee_id' => false]);
+
+        app(EmployeeWorkflowService::class)->create($this->store, $this->payload());
+
+        $this->assertArrayNotHasKey('networkId', array_values($this->tcp->employees)[0]);
+    }
+
+    public function test_network_id_is_not_sent_when_the_suffix_is_blank(): void
+    {
+        config(['tcp.network_id_suffix' => '']);
+
+        app(EmployeeWorkflowService::class)->create($this->store, $this->payload());
+
+        $this->assertArrayNotHasKey('networkId', array_values($this->tcp->employees)[0]);
+    }
+
+    public function test_network_id_is_not_sent_on_update(): void
+    {
+        $employee = app(EmployeeWorkflowService::class)->create($this->store, $this->payload());
+        $employee->load(['statusHistories', 'contacts', 'addresses', 'positions.position']);
+
+        $payload = app(\App\Services\Tcp\TcpEmployeeMapper::class)
+            ->toPayload($employee, $this->store, forCreate: false);
+
+        $this->assertArrayNotHasKey('networkId', $payload);
+    }
+
     public function test_a_phone_contact_is_sent_as_cell_not_phone(): void
     {
         app(EmployeeWorkflowService::class)->create($this->store, $this->payload([

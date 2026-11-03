@@ -84,6 +84,16 @@ return [
     'employee_id_offset' => (int) env('TCP_EMPLOYEE_ID_OFFSET', 9000000),
 
     /*
+     | This account builds an employee's networkId as "<employeeId>@<suffix>"
+     | (e.g. "9000100@lce03795"), normally on TCP's side. When TCP stopped
+     | filling it in, creates were rejected with "The networkId must have a
+     | value", so when WE assign employeeId (assign_employee_id true) we send
+     | the networkId too. With assign_employee_id false the id is unknown until
+     | TCP returns it, so nothing is sent. Leave the suffix blank to never send.
+     */
+    'network_id_suffix' => trim((string) env('TCP_NETWORK_ID_SUFFIX', 'lce03795')),
+
+    /*
      | Employee `roleId` is a plain string. On this account it is not a
      | permission role at all — it is a US state postal code, confirmed
      | directly from the live account (not TCP's general docs, which barely
