@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\ReportDatasetController;
 use App\Http\Controllers\Api\V1\EmployeeWorkflowController;
 use App\Http\Controllers\Api\V1\EmployeeMetricController;
 use App\Http\Controllers\Api\V1\LaborController;
@@ -10,6 +11,7 @@ use App\Http\Controllers\Api\V1\ManagerDashboardController;
 use App\Http\Controllers\Api\V1\ShirtCatalogController;
 use App\Http\Controllers\Api\V1\ShirtMilestoneController;
 use App\Http\Controllers\Api\V1\WorkflowRequestController;
+use App\Reports\ReportDatasets;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -39,6 +41,16 @@ Route::get('employees/hire-hours/export/csv', [EmployeeWorkflowController::class
     ->name('api.v1.employees.hire-hours.export')->middleware(['throttle:service-secret', 'throttle:api-export', 'auth.secret.key']);
 
 Route::get('employees/hiring-temp-bernard/export/csv', [EmployeeWorkflowController::class, 'exportHiringTempBernard'])->name('api.v1.employees.hiring-temp-bernard.export')->middleware(['throttle:service-secret', 'throttle:api-export', 'auth.secret.key']);
+
+// The report dataset contract, the same in every service: the catalog, and one
+// literal query route per dataset (never a {key} parameter), so each dataset
+// has its own pizzasys auth rule. At the API root, outside v1. The body's
+// `stores` are store codes. Dataset queries sit on the heavy tier.
+Route::get('report-datasets', [ReportDatasetController::class, 'catalog'])->middleware(['throttle:api', 'auth.token.store']);
+foreach (ReportDatasets::DATASETS as $dataset) {
+    Route::post('report-datasets/'.$dataset::KEY.'/query', [ReportDatasetController::class, 'query'])
+        ->defaults('dataset', $dataset::KEY)->middleware(['throttle:api', 'throttle:api-heavy', 'auth.token.store']);
+}
 
 Route::prefix('v1')->middleware(['throttle:api', 'auth.token.store'])->group(function (): void {
     Route::post('employee-metrics/import', [EmployeeMetricController::class, 'import'])
