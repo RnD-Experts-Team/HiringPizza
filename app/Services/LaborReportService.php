@@ -9,14 +9,30 @@ use App\Models\EmployeeMetricColumn;
 use App\Models\EmployeePayHistory;
 use App\Models\EmployeePosition;
 use App\Models\EmployeeStatusHistory;
-use App\Models\EmployeeStore;
 use App\Models\SeparationRequest;
 use App\Models\Store;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
+use Illuminate\Database\Query\Builder;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
+/**
+ * The Labor report: headcount, tenure, turnover, overtime and labor metrics for
+ * a set of stores over an inclusive date range.
+ *
+ * getLaborReport() is one store and one Tue–Mon business week (the single-store
+ * page); getRangeReport() is any stores over any range (Business Reports). Both
+ * run on the same set-based lookups: each one takes the list of store ids plus a
+ * list of dates or date windows and answers them in one grouped query, so the
+ * number of queries follows the weeks and separation dates in the range, never
+ * stores × weeks.
+ *
+ * "Who is in a store on a date" is always the employee's latest store
+ * assignment on or before that date; "active" additionally means their latest
+ * status on or before that date is not resigned/terminated.
+ */
 class LaborReportService
 {
     private const DEFAULT_TREND_WEEKS = 6;
@@ -36,6 +52,11 @@ class LaborReportService
 
     private const HIGH_HOURS_THRESHOLD = 60;
 
+    private const TENURE_LIST_SIZE = 5;
+
+    /** Windows per derived table. SQLite allows 500 terms in one compound SELECT. */
+    private const WINDOWS_PER_QUERY = 200;
+
     private Collection $columnsById;
 
     private Collection $columnsByKey;
@@ -47,31 +68,271 @@ class LaborReportService
 
         $trendWeeks = max(1, min(self::MAX_TREND_WEEKS, $trendWeeks ?? self::DEFAULT_TREND_WEEKS));
 
-        $this->loadColumns();
+        $trailing = [];
+        for ($i = $trendWeeks - 1; $i >= 0; $i--) {
+            $trailing[] = $this->isoBusinessWeek($day->subWeeks($i));
+        }
 
-        $headcount = $this->buildHeadcount($store, $weekStart, $weekEnd);
-        $tenure = $this->buildTenure($store, $weekEnd);
-        $turnover = $this->buildTurnover($store, $weekStart, $weekEnd);
-        $labor = $this->buildLaborColumns($store, $weekStart, $weekEnd);
-        $trend = $this->buildTrend($store, $day, $trendWeeks);
-        $employees = $this->buildRoster($store, $weekStart, $weekEnd);
-        $overtime = $this->buildOvertime($employees);
-        $summary = $this->buildSummary($headcount, $turnover, $trend, $overtime);
+        $report = $this->build([$store->id => $store->store_number], $weekStart, $weekEnd, $trailing, false)['combined'];
+
+        $headcount = $report['headcount'];
+        $overtime = $report['overtime'];
+        $trend = $this->trendWithAverages($report['trend']);
 
         return [
             'store' => $store->store_number,
             'date' => $day->toDateString(),
             'week_start' => $weekStart->toDateString(),
             'week_end' => $weekEnd->toDateString(),
-            'summary' => $summary,
-            'headcount' => $headcount,
-            'tenure' => $tenure,
-            'turnover' => $turnover,
-            'labor' => $labor,
-            'overtime' => $overtime,
+            'summary' => [
+                'headcount_current' => $headcount['active_end'],
+                'new_hires_this_week' => $headcount['new_hires'],
+                'separations_this_week' => $headcount['separations'],
+                'notable_departures_this_week' => $report['summary']['notable_departures'],
+                'turnover_rate_this_week_percent' => $report['turnover']['turnover_rate_percent'],
+                'avg_weekly_turnover_rate_trailing_percent' => $trend['averages']['turnover_rate_percent'] ?? null,
+                'avg_weekly_gross_pay_trailing' => $trend['averages']['total_gross_pay'] ?? null,
+                'avg_weekly_hours_trailing' => $trend['averages']['total_hours'] ?? null,
+                'employees_over_40_hours' => $overtime['over_40_count'],
+                'employees_over_60_hours' => $overtime['over_60_count'],
+            ],
+            'headcount' => [
+                'active_start_of_week' => $headcount['active_start'],
+                'active_end_of_week' => $headcount['active_end'],
+                'new_hires' => $headcount['new_hires'],
+                'separations' => $headcount['separations'],
+                'net_change' => $headcount['net_change'],
+                'by_position' => $headcount['by_position'],
+            ],
+            'tenure' => $report['tenure'],
+            'turnover' => $report['turnover'],
+            'labor' => $report['labor'],
+            'overtime' => [
+                'over_40_hours_threshold' => self::OVERTIME_HOURS_THRESHOLD,
+                'over_40_hours_count' => $overtime['over_40_count'],
+                'over_40_hours' => array_map(
+                    fn (array $row) => Arr::only($row, ['employee_id', 'name', 'position', 'total_hours', 'overtime_hours']),
+                    $overtime['over_40'],
+                ),
+                'over_60_hours_threshold' => self::HIGH_HOURS_THRESHOLD,
+                'over_60_hours_count' => $overtime['over_60_count'],
+                'over_60_hours' => array_map(
+                    fn (array $row) => Arr::only($row, ['employee_id', 'name', 'position', 'total_hours']),
+                    $overtime['over_60'],
+                ),
+            ],
             'trend' => $trend,
-            'employees' => $employees,
+            'employees' => $report['roster'],
         ];
+    }
+
+    /**
+     * Any stores over any inclusive range. `combined` is every store together
+     * and carries the lists (each item names its store); `by_store` keeps the
+     * counts and aggregates only. The trend, overtime and final labor follow
+     * the Tue–Mon business weeks that overlap the range, whole weeks.
+     *
+     * @param  Collection<int, Store>  $stores
+     */
+    public function getRangeReport(Collection $stores, string $startDate, string $endDate): array
+    {
+        $from = CarbonImmutable::parse($startDate)->startOfDay();
+        $to = CarbonImmutable::parse($endDate)->startOfDay();
+
+        $weeks = [];
+        for ($weekStart = $this->isoBusinessWeek($from)[0]; $weekStart->lte($to); $weekStart = $weekStart->addWeek()) {
+            $weeks[] = $this->isoBusinessWeek($weekStart);
+        }
+
+        $storeNumbers = $stores->sortBy('store_number')->pluck('store_number', 'id')->all();
+        $report = $this->build($storeNumbers, $from, $to, $weeks, true);
+
+        $byStore = [];
+        foreach ($report['by_store'] as $storeId => $block) {
+            $byStore[$storeNumbers[$storeId]] = $block;
+        }
+
+        return [
+            'start_date' => $from->toDateString(),
+            'end_date' => $to->toDateString(),
+            'weeks' => array_map(fn (array $week) => [
+                'week_start' => $week[0]->toDateString(),
+                'week_end' => $week[1]->toDateString(),
+            ], $weeks),
+            'combined' => $report['combined'],
+            'by_store' => (object) $byStore,
+        ];
+    }
+
+    // -------------------------------------------------------------------------
+    // Assembly
+    // -------------------------------------------------------------------------
+
+    /**
+     * Runs every lookup once for all the stores, then cuts the results into the
+     * combined block and (for a range report) one block per store.
+     *
+     * @param  array<int, string>  $stores  store id => store number
+     * @param  list<array{0: CarbonImmutable, 1: CarbonImmutable}>  $weeks  contiguous trend weeks
+     * @return array{combined: array, by_store: array<int, array>}
+     */
+    private function build(array $stores, CarbonImmutable $from, CarbonImmutable $to, array $weeks, bool $range): array
+    {
+        $this->loadColumns();
+        $storeIds = array_keys($stores);
+        $allColumnIds = $this->columnsById->keys()->all();
+
+        $events = $this->separationEvents($storeIds, $from, $to);
+        $members = $this->activeMembersAsOf($storeIds, $to);
+
+        $dates = [$from->subDay(), $to];
+        foreach ($weeks as [$weekStart, $weekEnd]) {
+            $dates[] = $weekStart->subDay();
+            $dates[] = $weekEnd;
+        }
+        foreach ($events as $event) {
+            $dates[] = $event->effective_date;
+        }
+        $active = $this->activeCountsAsOf(
+            $storeIds,
+            collect($dates)->map(fn (CarbonInterface $date) => $date->toDateString())->unique()->values()->all(),
+        );
+        $activeAt = fn (CarbonInterface $date, ?int $storeId): int => $this->countFor($active[$date->toDateString()] ?? [], $storeId);
+
+        $statusCounts = $this->statusEventCounts($storeIds, $from, $to, $weeks);
+        $turnoverEvents = $this->mapTurnoverEvents($events, $stores, $activeAt);
+
+        // Over the range: per employee (roster) and per store (labor, pay).
+        $rangeWindow = [$this->window(0, $from, $to, $to)];
+        $rangeRows = $this->metricStats($storeIds, $rangeWindow, $allColumnIds, byEmployee: true);
+        $rangeStoreRows = $this->metricStats($storeIds, $rangeWindow, $allColumnIds)->groupBy('store_id');
+        $overtimeRows = $this->overtimeRows($storeIds, $range ? $weeks : [[$from, $to]]);
+
+        $employeeIds = $members->keys()
+            ->merge($rangeRows->pluck('employee_id'))
+            ->merge($overtimeRows->pluck('employee_id'))
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+        $employees = $this->employees($employeeIds);
+        $positions = $this->latestPositionsAsOf($employeeIds, $to);
+
+        $tenureRows = $this->tenureRows($members, $to, $employees, $stores);
+        $overtimeRows = $this->decorateOvertime($overtimeRows, $employees, $positions, $stores);
+
+        $weekWindows = array_map(fn (array $week, int $i) => $this->window($i, $week[0], $week[1], $week[1]), $weeks, array_keys($weeks));
+        $trendRows = $this->metricStats($storeIds, $weekWindows, $this->resolveColumnIds(self::HIGHLIGHT_COLUMN_KEYS))
+            ->groupBy('idx')
+            ->map(fn (Collection $rows) => $rows->groupBy('store_id'));
+        $finalLaborRows = $range ? $this->finalLaborRows($storeIds, $weeks) : collect();
+
+        $block = function (?int $storeId, bool $withLists) use (
+            $from, $to, $weeks, $range, $members, $activeAt, $statusCounts, $turnoverEvents, $rangeStoreRows,
+            $overtimeRows, $positions, $tenureRows, $trendRows, $finalLaborRows, $allColumnIds
+        ): array {
+            $inStore = fn (Collection $items) => $storeId === null
+                ? $items
+                : $items->filter(fn (array $item) => $item['store_id'] === $storeId);
+
+            $activeStart = $activeAt($from->subDay(), $storeId);
+            $activeEnd = $activeAt($to, $storeId);
+            $newHires = $this->countFor($statusCounts['range'], $storeId, 'new_hires');
+            $separations = $this->countFor($statusCounts['range'], $storeId, 'separations');
+
+            $memberIds = ($storeId === null ? $members : $members->filter(fn (int $s) => $s === $storeId))->keys()->all();
+            $headcount = [
+                'active_start' => $activeStart,
+                'active_end' => $activeEnd,
+                'new_hires' => $newHires,
+                'separations' => $separations,
+                'net_change' => $newHires - $separations,
+                'by_position' => $positions->only($memberIds)
+                    ->countBy()
+                    ->sortDesc()
+                    ->map(fn (int $count, string $position) => ['position' => $position, 'count' => $count])
+                    ->values()
+                    ->all(),
+            ];
+
+            $storeEvents = $inStore($turnoverEvents);
+            $turnover = $this->turnoverBlock($storeEvents, $activeStart, $activeEnd, $withLists);
+            $notable = $storeEvents->filter(function (array $event) {
+                $impact = $event['impact_snapshot'];
+
+                return ($impact['above_average_hours'] ?? false) || ($impact['above_average_performance'] ?? false);
+            })->count();
+
+            $rangeStats = $this->rawStats($storeId === null ? $rangeStoreRows->flatten(1) : $rangeStoreRows->get($storeId, collect()));
+            $metrics = $this->formatStats($rangeStats, $allColumnIds);
+
+            $trend = array_map(function (array $week, int $i) use ($activeAt, $statusCounts, $trendRows, $storeId) {
+                $weekCounts = $statusCounts['weeks'][$i] ?? [];
+
+                return $this->trendEntry(
+                    $week,
+                    $activeAt($week[0]->subDay(), $storeId),
+                    $activeAt($week[1], $storeId),
+                    $this->countFor($weekCounts, $storeId, 'new_hires'),
+                    $this->countFor($weekCounts, $storeId, 'separations'),
+                    $this->formatStats(
+                        $this->rawStats($storeId === null
+                            ? $trendRows->get($i, collect())->flatten(1)
+                            : $trendRows->get($i, collect())->get($storeId, collect())),
+                        $this->resolveColumnIds(self::HIGHLIGHT_COLUMN_KEYS),
+                    ),
+                );
+            }, $weeks, array_keys($weeks));
+
+            $storeOvertime = $inStore($overtimeRows);
+            $overtime = $this->overtimeBlock($storeOvertime, $withLists);
+            $averages = $this->averageTrendEntries(collect($trend));
+
+            $result = [
+                'summary' => [
+                    'headcount_start' => $activeStart,
+                    'headcount_end' => $activeEnd,
+                    'new_hires' => $newHires,
+                    'separations' => $separations,
+                    'notable_departures' => $notable,
+                    'turnover_rate_percent' => $turnover['turnover_rate_percent'],
+                    'avg_weekly_gross_pay' => $averages['total_gross_pay'],
+                    'avg_weekly_hours' => $averages['total_hours'],
+                    'employee_weeks_over_40' => $overtime['over_40_count'],
+                    'employee_weeks_over_60' => $overtime['over_60_count'],
+                ],
+                'headcount' => $headcount,
+                'tenure' => $this->tenureBlock($inStore($tenureRows), $withLists),
+                'turnover' => $turnover,
+                'overtime' => $overtime,
+                'labor' => [
+                    'highlights' => $this->buildHighlights($metrics, $activeEnd),
+                    'by_column' => collect($metrics)->filter(fn (array $m) => $m['count'] > 0)->all(),
+                ],
+                'trend' => $trend,
+            ];
+
+            if ($range) {
+                $result['pay'] = $this->payBlock($rangeStats);
+                $result['final_labor'] = $this->finalLabor($weeks, $finalLaborRows, $storeId);
+            }
+
+            return $result;
+        };
+
+        $combined = $block(null, true);
+        $combined['roster'] = $this->buildRoster($members, $rangeRows, $employees, $positions, $to, $stores);
+        if ($range) {
+            $combined['birthdays'] = $this->buildBirthdays($combined['roster'], $from, $to);
+        }
+
+        $byStore = [];
+        if ($range) {
+            foreach ($storeIds as $storeId) {
+                $byStore[$storeId] = $block($storeId, false);
+            }
+        }
+
+        return ['combined' => $combined, 'by_store' => $byStore];
     }
 
     // -------------------------------------------------------------------------
@@ -79,143 +340,165 @@ class LaborReportService
     // -------------------------------------------------------------------------
 
     /**
-     * Who worked overtime (>40h) or notably long weeks (>=60h) this week —
-     * derived from the roster's already-computed total_hours, not a fresh query.
+     * Employee-weeks over 40 hours (one row per employee per business week),
+     * summed in SQL per week and store; only rows over the line come back.
      */
-    private function buildOvertime(array $employees): array
+    private function overtimeRows(array $storeIds, array $weeks): Collection
     {
-        $withHours = collect($employees)
+        $columnIds = $this->resolveColumnIds(['total_hours']);
+        $windows = array_map(fn (array $week, int $i) => $this->window($i, $week[0], $week[1], $week[1]), $weeks, array_keys($weeks));
+
+        return $this->metricStats($storeIds, $windows, $columnIds, byEmployee: true, minSum: self::OVERTIME_HOURS_THRESHOLD)
+            ->map(fn (object $row) => [
+                'employee_id' => (int) $row->employee_id,
+                'store_id' => (int) $row->store_id,
+                'week_start' => $weeks[(int) $row->idx][0]->toDateString(),
+                'week_end' => $weeks[(int) $row->idx][1]->toDateString(),
+                'total_hours' => round((float) $row->sum_value, 4),
+            ])
+            ->filter(fn (array $row) => $row['total_hours'] > self::OVERTIME_HOURS_THRESHOLD)
+            ->values();
+    }
+
+    /** Names, store and position on each row; most hours first, then name order. */
+    private function decorateOvertime(Collection $rows, Collection $employees, Collection $positions, array $stores): Collection
+    {
+        $rank = $employees->keys()->flip();
+
+        return $rows
             ->map(fn (array $row) => [
                 'employee_id' => $row['employee_id'],
-                'name' => $row['name'],
-                'position' => $row['position'],
-                'total_hours' => $row['metrics']['total_hours']['sum'] ?? null,
+                'name' => $this->fullName($employees->get($row['employee_id'])),
+                'store' => $stores[$row['store_id']],
+                'position' => $positions->get($row['employee_id']),
+                'week_start' => $row['week_start'],
+                'week_end' => $row['week_end'],
+                'total_hours' => $row['total_hours'],
+                'overtime_hours' => round($row['total_hours'] - self::OVERTIME_HOURS_THRESHOLD, 2),
+                'store_id' => $row['store_id'],
             ])
-            ->filter(fn (array $row) => $row['total_hours'] !== null);
-
-        $over40 = $withHours->filter(fn (array $row) => $row['total_hours'] > self::OVERTIME_HOURS_THRESHOLD)
-            ->map(fn (array $row) => $row + ['overtime_hours' => round($row['total_hours'] - self::OVERTIME_HOURS_THRESHOLD, 2)])
-            ->sortByDesc('total_hours')
+            ->sort(fn (array $a, array $b) => [$b['total_hours'], $rank[$a['employee_id']]] <=> [$a['total_hours'], $rank[$b['employee_id']]])
             ->values();
+    }
 
-        $over60 = $withHours->filter(fn (array $row) => $row['total_hours'] >= self::HIGH_HOURS_THRESHOLD)
-            ->sortByDesc('total_hours')
-            ->values();
+    private function overtimeBlock(Collection $rows, bool $withLists): array
+    {
+        $over60 = $rows->filter(fn (array $row) => $row['total_hours'] >= self::HIGH_HOURS_THRESHOLD)->values();
 
-        return [
+        $block = [
             'over_40_hours_threshold' => self::OVERTIME_HOURS_THRESHOLD,
-            'over_40_hours_count' => $over40->count(),
-            'over_40_hours' => $over40->all(),
             'over_60_hours_threshold' => self::HIGH_HOURS_THRESHOLD,
-            'over_60_hours_count' => $over60->count(),
-            'over_60_hours' => $over60->all(),
+            'over_40_count' => $rows->count(),
+            'over_60_count' => $over60->count(),
         ];
+
+        if ($withLists) {
+            $block['over_40'] = $rows->map(fn (array $row) => Arr::except($row, 'store_id'))->values()->all();
+            $block['over_60'] = $over60->map(fn (array $row) => Arr::except($row, 'store_id'))->values()->all();
+        }
+
+        return $block;
     }
 
     // -------------------------------------------------------------------------
-    // Summary
+    // Headcount events
     // -------------------------------------------------------------------------
 
-    private function buildSummary(array $headcount, array $turnover, array $trend, array $overtime): array
+    /**
+     * Hires (hired/rehired) and separations (resigned/terminated) recorded at
+     * the stores, counted for the range and for each trend week.
+     *
+     * @return array{range: array<int, array<string, int>>, weeks: array<int, array<int, array<string, int>>>}
+     */
+    private function statusEventCounts(array $storeIds, CarbonImmutable $from, CarbonImmutable $to, array $weeks): array
     {
-        $notable = collect($turnover['events'])->filter(function (array $event) {
-            $impact = $event['impact_snapshot'];
+        $first = $weeks === [] ? $from : $weeks[0][0];
+        $last = $weeks === [] ? $to : $weeks[count($weeks) - 1][1];
+        $hires = [EmployeeStatus::Hired->value, EmployeeStatus::Rehired->value];
 
-            return ($impact['above_average_hours'] ?? false) || ($impact['above_average_performance'] ?? false);
-        })->count();
+        $rows = DB::table('employee_status_histories')
+            ->whereIn('store_id', $storeIds)
+            ->whereIn('status', [...$hires, ...$this->separatedStatuses()])
+            ->whereBetween('effective_date', [$first->min($from)->toDateString(), $last->max($to)->toDateString()])
+            ->select('store_id', 'status', 'effective_date')
+            ->selectRaw('COUNT(*) as n')
+            ->groupBy('store_id', 'status', 'effective_date')
+            ->get();
 
-        return [
-            'headcount_current' => $headcount['active_end_of_week'],
-            'new_hires_this_week' => $headcount['new_hires'],
-            'separations_this_week' => $headcount['separations'],
-            'notable_departures_this_week' => $notable,
-            'turnover_rate_this_week_percent' => $turnover['turnover_rate_percent'],
-            'avg_weekly_turnover_rate_trailing_percent' => $trend['averages']['turnover_rate_percent'] ?? null,
-            'avg_weekly_gross_pay_trailing' => $trend['averages']['total_gross_pay'] ?? null,
-            'avg_weekly_hours_trailing' => $trend['averages']['total_hours'] ?? null,
-            'employees_over_40_hours' => $overtime['over_40_hours_count'],
-            'employees_over_60_hours' => $overtime['over_60_hours_count'],
-        ];
+        $range = [];
+        $byWeek = [];
+        foreach ($rows as $row) {
+            $kind = in_array($row->status, $hires, true) ? 'new_hires' : 'separations';
+            $date = CarbonImmutable::parse($row->effective_date)->startOfDay();
+            $storeId = (int) $row->store_id;
+            $count = (int) $row->n;
+
+            if ($date->betweenIncluded($from, $to)) {
+                $range[$storeId][$kind] = ($range[$storeId][$kind] ?? 0) + $count;
+            }
+
+            if ($weeks !== [] && $date->betweenIncluded($first, $last)) {
+                $week = intdiv((int) $first->diffInDays($date), 7);
+                $byWeek[$week][$storeId][$kind] = ($byWeek[$week][$storeId][$kind] ?? 0) + $count;
+            }
+        }
+
+        return ['range' => $range, 'weeks' => $byWeek];
     }
 
-    // -------------------------------------------------------------------------
-    // Headcount
-    // -------------------------------------------------------------------------
-
-    private function buildHeadcount(Store $store, CarbonImmutable $weekStart, CarbonImmutable $weekEnd): array
+    /** One store's count, or every store's added up when $storeId is null. */
+    private function countFor(array $byStore, ?int $storeId, ?string $kind = null): int
     {
-        $activeStartIds = $this->activeEmployeeIdsAsOf($store, $weekStart->subDay());
-        $activeEndIds = $this->activeEmployeeIdsAsOf($store, $weekEnd);
+        $value = fn ($entry) => (int) ($kind === null ? $entry : ($entry[$kind] ?? 0));
 
-        $newHires = $this->countStatusEvents($store, [EmployeeStatus::Hired, EmployeeStatus::Rehired], $weekStart, $weekEnd);
-        $separations = $this->countStatusEvents($store, [EmployeeStatus::Resigned, EmployeeStatus::Terminated], $weekStart, $weekEnd);
+        if ($storeId !== null) {
+            return isset($byStore[$storeId]) ? $value($byStore[$storeId]) : 0;
+        }
 
-        $positions = $this->latestPositionsAsOf($activeEndIds, $weekEnd);
-        $byPosition = $positions->countBy()
-            ->sortDesc()
-            ->map(fn (int $count, string $position) => ['position' => $position, 'count' => $count])
-            ->values()
-            ->all();
-
-        return [
-            'active_start_of_week' => $activeStartIds->count(),
-            'active_end_of_week' => $activeEndIds->count(),
-            'new_hires' => $newHires,
-            'separations' => $separations,
-            'net_change' => $newHires - $separations,
-            'by_position' => $byPosition,
-        ];
-    }
-
-    private function countStatusEvents(Store $store, array $statuses, CarbonImmutable $weekStart, CarbonImmutable $weekEnd): int
-    {
-        return EmployeeStatusHistory::query()
-            ->where('store_id', $store->id)
-            ->whereIn('status', array_map(fn (EmployeeStatus $s) => $s->value, $statuses))
-            ->whereBetween('effective_date', [$weekStart->toDateString(), $weekEnd->toDateString()])
-            ->count();
+        return array_sum(array_map($value, $byStore));
     }
 
     // -------------------------------------------------------------------------
     // Tenure
     // -------------------------------------------------------------------------
 
-    private function buildTenure(Store $store, CarbonImmutable $weekEnd): array
+    /** Every employee active at the stores on $asOf with a current-stint start, in id order. */
+    private function tenureRows(Collection $members, CarbonImmutable $asOf, Collection $employees, array $stores): Collection
     {
-        $activeIds = $this->activeEmployeeIdsAsOf($store, $weekEnd);
+        $stintStarts = $this->currentStintStarts($members->keys(), $asOf);
 
-        if ($activeIds->isEmpty()) {
-            return [
-                'average_tenure_days' => null,
-                'distribution' => $this->tenureDistribution(collect()),
-                'newest_hires' => [],
-                'longest_tenured' => [],
-            ];
-        }
+        return $members->map(function (int $storeId, int $employeeId) use ($stintStarts, $employees, $stores, $asOf) {
+            $start = $stintStarts->get($employeeId);
 
-        $stintStarts = $this->currentStintStarts($activeIds, $weekEnd);
-
-        $employees = Employee::query()
-            ->whereIn('id', $activeIds)
-            ->get(['id', 'first_name', 'middle_name', 'last_name']);
-
-        $rows = $employees->map(function (Employee $employee) use ($stintStarts, $weekEnd) {
-            $start = $stintStarts->get($employee->id);
+            if ($start === null || !$employees->has($employeeId)) {
+                return null;
+            }
 
             return [
-                'employee_id' => $employee->id,
-                'name' => $this->fullName($employee),
-                'hire_date' => $start?->toDateString(),
-                'tenure_days' => $start !== null ? abs($weekEnd->diffInDays($start)) : null,
+                'employee_id' => $employeeId,
+                'name' => $this->fullName($employees->get($employeeId)),
+                'store' => $stores[$storeId],
+                'hire_date' => $start->toDateString(),
+                'tenure_days' => abs($asOf->diffInDays($start)),
+                'store_id' => $storeId,
             ];
-        })->filter(fn (array $row) => $row['tenure_days'] !== null)->values();
+        })->filter()->values();
+    }
 
-        return [
+    private function tenureBlock(Collection $rows, bool $withLists): array
+    {
+        $block = [
             'average_tenure_days' => $rows->isNotEmpty() ? round($rows->avg('tenure_days'), 1) : null,
             'distribution' => $this->tenureDistribution($rows),
-            'newest_hires' => $rows->sortBy('tenure_days')->take(5)->values()->all(),
-            'longest_tenured' => $rows->sortByDesc('tenure_days')->take(5)->values()->all(),
         ];
+
+        if ($withLists) {
+            $strip = fn (array $row) => Arr::except($row, 'store_id');
+            $block['newest_hires'] = $rows->sortBy('tenure_days')->take(self::TENURE_LIST_SIZE)->map($strip)->values()->all();
+            $block['longest_tenured'] = $rows->sortByDesc('tenure_days')->take(self::TENURE_LIST_SIZE)->map($strip)->values()->all();
+        }
+
+        return $block;
     }
 
     private function tenureDistribution(Collection $rows): array
@@ -239,50 +522,57 @@ class LaborReportService
     }
 
     /**
-     * Most recent hired/rehired status-history effective_date on/before $asOf,
-     * per employee — i.e. the start of each employee's *current* stint.
+     * Hired/rehired history on/before $upTo per employee, newest first — the
+     * first entry on/before a date is the start of the stint current then.
      */
-    private function currentStintStarts(Collection $employeeIds, CarbonInterface $asOf): Collection
+    private function hireHistory(Collection $employeeIds, CarbonInterface $upTo): Collection
     {
         if ($employeeIds->isEmpty()) {
             return collect();
         }
 
-        $rows = EmployeeStatusHistory::query()
-            ->whereIn('employee_id', $employeeIds)
+        return EmployeeStatusHistory::query()
+            ->whereIntegerInRaw('employee_id', $employeeIds->all())
             ->whereIn('status', [EmployeeStatus::Hired->value, EmployeeStatus::Rehired->value])
-            ->whereDate('effective_date', '<=', $asOf->toDateString())
+            ->whereDate('effective_date', '<=', $upTo->toDateString())
             ->orderByDesc('effective_date')
             ->orderByDesc('id')
-            ->get(['employee_id', 'effective_date']);
+            ->get(['employee_id', 'effective_date'])
+            ->groupBy('employee_id');
+    }
 
-        return $rows->unique('employee_id')->pluck('effective_date', 'employee_id');
+    private function stintStartAsOf(?Collection $hires, CarbonInterface $asOf): ?CarbonInterface
+    {
+        return $hires?->first(fn (EmployeeStatusHistory $hire) => $hire->effective_date->lte($asOf))?->effective_date;
+    }
+
+    /** The start of each employee's stint current on $asOf. */
+    private function currentStintStarts(Collection $employeeIds, CarbonInterface $asOf): Collection
+    {
+        return $this->hireHistory($employeeIds, $asOf)->map(fn (Collection $hires) => $hires->first()->effective_date);
     }
 
     // -------------------------------------------------------------------------
     // Turnover
     // -------------------------------------------------------------------------
 
-    private function buildTurnover(Store $store, CarbonImmutable $weekStart, CarbonImmutable $weekEnd): array
+    private function separationEvents(array $storeIds, CarbonImmutable $from, CarbonImmutable $to): Collection
     {
-        $events = EmployeeStatusHistory::query()
-            ->with('employee')
-            ->where('store_id', $store->id)
-            ->whereIn('status', [EmployeeStatus::Resigned->value, EmployeeStatus::Terminated->value])
-            ->whereBetween('effective_date', [$weekStart->toDateString(), $weekEnd->toDateString()])
+        return EmployeeStatusHistory::query()
+            ->with('employee:id,first_name,middle_name,last_name')
+            ->whereIn('store_id', $storeIds)
+            ->whereIn('status', $this->separatedStatuses())
+            ->whereBetween('effective_date', [$from->toDateString(), $to->toDateString()])
             ->orderBy('effective_date')
+            ->orderBy('id')
             ->get();
+    }
 
-        $activeStart = $this->activeEmployeeIdsAsOf($store, $weekStart->subDay())->count();
-        $activeEnd = $this->activeEmployeeIdsAsOf($store, $weekEnd)->count();
+    private function turnoverBlock(Collection $events, int $activeStart, int $activeEnd, bool $withEvents): array
+    {
         $avgHeadcount = ($activeStart + $activeEnd) / 2;
 
-        $mapped = $events->map(fn (EmployeeStatusHistory $event) => $this->mapTurnoverEvent($event, $store));
-
-        $voluntary = $mapped->where('type', 'voluntary')->count();
-        $involuntary = $mapped->where('type', 'involuntary')->count();
-
-        $byReason = $mapped
+        $byReason = $events
             ->groupBy(fn (array $e) => ($e['reason'] ?? 'unknown') . '|' . $e['type'])
             ->map(fn (Collection $group) => [
                 'reason' => $group->first()['reason'],
@@ -292,57 +582,116 @@ class LaborReportService
             ->values()
             ->all();
 
-        $count = $mapped->count();
+        $count = $events->count();
         $turnoverRate = $avgHeadcount > 0
             ? round(($count / $avgHeadcount) * 100, 2)
             : ($count > 0 ? 100.0 : 0.0);
 
-        return [
+        $block = [
             'separations_count' => $count,
-            'voluntary_count' => $voluntary,
-            'involuntary_count' => $involuntary,
+            'voluntary_count' => $events->where('type', 'voluntary')->count(),
+            'involuntary_count' => $events->where('type', 'involuntary')->count(),
             'turnover_rate_percent' => $turnoverRate,
             'by_reason' => $byReason,
-            'events' => $mapped->values()->all(),
         ];
-    }
 
-    private function mapTurnoverEvent(EmployeeStatusHistory $event, Store $store): array
-    {
-        $type = $event->status === EmployeeStatus::Resigned ? 'voluntary' : 'involuntary';
-        $separationDate = CarbonImmutable::parse($event->effective_date);
-
-        $separationType = $type === 'voluntary' ? SeparationType::Resignation : SeparationType::Termination;
-
-        $bestMatch = SeparationRequest::query()
-            ->where('employee_id', $event->employee_id)
-            ->where('store_id', $store->id)
-            ->where('separation_type', $separationType->value)
-            ->whereNotNull('final_working_day')
-            ->select('separation_requests.*')
-            ->selectRaw('ABS(DATEDIFF(final_working_day, ?)) as day_diff', [$separationDate->toDateString()])
-            ->orderBy('day_diff')
-            ->first();
-
-        $reason = null;
-        if ($bestMatch !== null) {
-            $reason = $type === 'voluntary'
-                ? $bestMatch->resignation_reason?->value
-                : $bestMatch->termination_reason?->value;
+        if ($withEvents) {
+            $block['events'] = $events->map(fn (array $e) => Arr::except($e, 'store_id'))->values()->all();
         }
 
-        $stintStart = $this->currentStintStarts(collect([$event->employee_id]), $separationDate)->get($event->employee_id);
+        return $block;
+    }
 
-        return [
-            'employee_id' => $event->employee_id,
-            'name' => $event->employee !== null ? $this->fullName($event->employee) : null,
-            'type' => $type,
-            'effective_date' => $separationDate->toDateString(),
-            'reason' => $reason,
-            'reason_matched' => $reason !== null,
-            'tenure_days' => $stintStart !== null ? abs($separationDate->diffInDays($stintStart)) : null,
-            'impact_snapshot' => $this->buildImpactSnapshot($event->employee_id, $separationDate, $stintStart, $store),
-        ];
+    /**
+     * Each separation with its matched reason, tenure and impact snapshot. The
+     * separation requests, hire history and both sides of every snapshot are
+     * fetched once for all events.
+     *
+     * @param  callable(CarbonInterface, ?int): int  $activeAt
+     */
+    private function mapTurnoverEvents(Collection $events, array $stores, callable $activeAt): Collection
+    {
+        if ($events->isEmpty()) {
+            return collect();
+        }
+
+        $employeeIds = $events->pluck('employee_id')->unique()->values();
+        $eventStoreIds = $events->pluck('store_id')->map(fn ($id) => (int) $id)->unique()->values()->all();
+        $hires = $this->hireHistory($employeeIds, $events->last()->effective_date);
+
+        $requests = SeparationRequest::query()
+            ->whereIntegerInRaw('employee_id', $employeeIds->all())
+            ->whereIn('store_id', $eventStoreIds)
+            ->whereNotNull('final_working_day')
+            ->orderBy('id')
+            ->get()
+            ->groupBy(fn (SeparationRequest $request) => $request->employee_id . '|' . $request->store_id . '|' . $request->separation_type->value);
+
+        $mapped = $events->values()->map(function (EmployeeStatusHistory $event) use ($stores, $hires, $requests) {
+            $type = $event->status === EmployeeStatus::Resigned ? 'voluntary' : 'involuntary';
+            $separationDate = CarbonImmutable::parse($event->effective_date);
+            $separationType = $type === 'voluntary' ? SeparationType::Resignation : SeparationType::Termination;
+
+            $bestMatch = $requests->get($event->employee_id . '|' . $event->store_id . '|' . $separationType->value)
+                ?->sortBy(fn (SeparationRequest $request) => abs($separationDate->diffInDays($request->final_working_day)))
+                ->first();
+
+            $reason = null;
+            if ($bestMatch !== null) {
+                $reason = $type === 'voluntary'
+                    ? $bestMatch->resignation_reason?->value
+                    : $bestMatch->termination_reason?->value;
+            }
+
+            $stintStart = $this->stintStartAsOf($hires->get($event->employee_id), $separationDate);
+            $availableDays = $stintStart !== null ? abs($separationDate->diffInDays($stintStart)) : self::IMPACT_LOOKBACK_DAYS;
+            $lookbackDays = max(1, min(self::IMPACT_LOOKBACK_DAYS, $availableDays));
+
+            return [
+                'employee_id' => $event->employee_id,
+                'name' => $event->employee !== null ? $this->fullName($event->employee) : null,
+                'store' => $stores[$event->store_id],
+                'type' => $type,
+                'effective_date' => $separationDate->toDateString(),
+                'reason' => $reason,
+                'reason_matched' => $reason !== null,
+                'tenure_days' => $stintStart !== null ? abs($separationDate->diffInDays($stintStart)) : null,
+                'store_id' => (int) $event->store_id,
+                'lookback_days' => $lookbackDays,
+                'window_start' => $separationDate->subDays($lookbackDays),
+                'window_end' => $separationDate,
+            ];
+        });
+
+        // The departing employee's own window, and the store's same window (shared between events).
+        $columnIds = $this->resolveColumnIds(self::IMPACT_COLUMN_KEYS);
+        $employeeWindows = [];
+        $storeWindows = [];
+        foreach ($mapped as $i => $event) {
+            $employeeWindows[] = $this->window($i, $event['window_start'], $event['window_end'], $event['window_end'], employeeId: $event['employee_id']);
+
+            $key = $this->storeWindowKey($event);
+            $storeWindows[$key] ??= $this->window(count($storeWindows), $event['window_start'], $event['window_end'], $event['window_end'], storeId: $event['store_id']);
+        }
+
+        $employeeStats = $this->employeeWindowStats($employeeWindows, $columnIds)->groupBy('idx');
+        $storeStats = $this->metricStats($eventStoreIds, array_values($storeWindows), $columnIds, windowStore: true)->groupBy('idx');
+
+        return $mapped->map(function (array $event, int $i) use ($columnIds, $employeeStats, $storeStats, $storeWindows, $activeAt) {
+            $snapshot = $this->buildImpactSnapshot(
+                $event['lookback_days'],
+                $this->formatStats($this->rawStats($employeeStats->get($i, collect())), $columnIds),
+                $this->formatStats($this->rawStats($storeStats->get($storeWindows[$this->storeWindowKey($event)]['idx'], collect())), $columnIds),
+                max($activeAt($event['window_end'], $event['store_id']), 1),
+            );
+
+            return Arr::except($event, ['lookback_days', 'window_start', 'window_end']) + ['impact_snapshot' => $snapshot];
+        });
+    }
+
+    private function storeWindowKey(array $event): string
+    {
+        return $event['store_id'] . '|' . $event['window_start']->toDateString() . '|' . $event['window_end']->toDateString();
     }
 
     /**
@@ -350,24 +699,9 @@ class LaborReportService
      * vs. the store's average for the same window, so it's a transparent
      * comparison rather than an opaque composite score.
      */
-    private function buildImpactSnapshot(
-        int $employeeId,
-        CarbonImmutable $separationDate,
-        ?CarbonInterface $stintStart,
-        Store $store
-    ): array {
-        $availableDays = $stintStart !== null ? abs($separationDate->diffInDays($stintStart)) : self::IMPACT_LOOKBACK_DAYS;
-        $lookbackDays = max(1, min(self::IMPACT_LOOKBACK_DAYS, $availableDays));
-
-        $windowStart = $separationDate->subDays($lookbackDays)->toDateString();
-        $windowEnd = $separationDate->toDateString();
+    private function buildImpactSnapshot(float|int $lookbackDays, array $employeeStats, array $storeStats, int $storeActiveCount): array
+    {
         $weeksInWindow = $lookbackDays / 7;
-
-        $columnIds = $this->resolveColumnIds(self::IMPACT_COLUMN_KEYS);
-
-        $employeeStats = $this->aggregateMetrics($employeeId, null, $windowStart, $windowEnd, $columnIds);
-        $storeStats = $this->aggregateMetrics(null, $store->id, $windowStart, $windowEnd, $columnIds);
-        $storeActiveCount = max($this->activeEmployeeIdsAsOf($store, CarbonImmutable::parse($windowEnd))->count(), 1);
 
         $employeeAvgWeeklyHours = isset($employeeStats['total_hours']['sum']) && $employeeStats['total_hours']['sum'] !== null
             ? round($employeeStats['total_hours']['sum'] / $weeksInWindow, 2)
@@ -400,21 +734,6 @@ class LaborReportService
     // Labor (generic per-column aggregation)
     // -------------------------------------------------------------------------
 
-    private function buildLaborColumns(Store $store, CarbonImmutable $weekStart, CarbonImmutable $weekEnd): array
-    {
-        $columnIds = $this->columnsById->keys()->all();
-        $metrics = $this->aggregateMetrics(null, $store->id, $weekStart->toDateString(), $weekEnd->toDateString(), $columnIds);
-
-        $byColumn = collect($metrics)->filter(fn (array $m) => $m['count'] > 0)->all();
-
-        $activeCount = $this->activeEmployeeIdsAsOf($store, $weekEnd)->count();
-
-        return [
-            'highlights' => $this->buildHighlights($metrics, $activeCount),
-            'by_column' => $byColumn,
-        ];
-    }
-
     private function buildHighlights(array $metrics, int $activeCount): array
     {
         $get = fn (string $key, string $stat) => $metrics[$key][$stat] ?? null;
@@ -437,77 +756,52 @@ class LaborReportService
         ];
     }
 
-    /**
-     * Generic SUM/AVG/MIN/MAX/COUNT over employee_metric_values, resolved by
-     * column key/id rather than hardcoded IDs, so any metric column added
-     * later via CSV import shows up automatically.
-     *
-     * Scope to a single employee (roster/impact rows) via $employeeId, or to
-     * every employee currently assigned to a store (as of $to) via $storeId.
-     *
-     * @return array<string, array{label: string, sum: ?float, avg: ?float, min: ?float, max: ?float, count: int}>
-     */
-    private function aggregateMetrics(?int $employeeId, ?int $storeId, string $from, string $to, array $columnIds): array
+    /** Hourly pay and tips over the range, the figures Dashboard V1 shows for one week. */
+    private function payBlock(array $rawStats): array
     {
-        if (empty($columnIds)) {
-            return [];
+        $get = fn (string $key, string $stat) => $rawStats[$this->columnsByKey->get($key)?->id][$stat] ?? null;
+        $rounded = fn (?float $value) => $value !== null ? round($value, 2) : null;
+
+        $totalTips = (float) ($get('total_tips', 'sum') ?? 0);
+        $totalHours = (float) ($get('total_hours', 'sum') ?? 0);
+
+        return [
+            'average_hourly_pay' => $rounded($get('hourly_pay', 'avg')),
+            'maximum_hourly_pay' => $rounded($get('hourly_pay', 'max')),
+            'minimum_hourly_pay' => $rounded($get('hourly_pay', 'min')),
+            'total_tips' => round($totalTips, 2),
+            'total_hours' => round($totalHours, 2),
+            'tips_per_hour' => $totalHours > 0 ? round($totalTips / $totalHours, 2) : 0,
+        ];
+    }
+
+    /** Average labor per business week, everyone counted at the store they are at on the last week's end. */
+    private function finalLaborRows(array $storeIds, array $weeks): Collection
+    {
+        if ($weeks === []) {
+            return collect();
         }
 
-        $query = DB::table('employee_metrics as em')
-            ->join('employee_metric_values as emv', 'emv.employee_metric_id', '=', 'em.id')
-            ->whereBetween('em.metric_date', [$from, $to])
-            ->whereIn('emv.column_id', $columnIds);
+        $asOf = $weeks[count($weeks) - 1][1];
+        $windows = array_map(fn (array $week, int $i) => $this->window($i, $week[0], $week[1], $asOf), $weeks, array_keys($weeks));
 
-        if ($employeeId !== null) {
-            $query->where('em.employee_id', $employeeId);
-        }
+        return $this->metricStats($storeIds, $windows, $this->resolveColumnIds(['labor']))->groupBy('idx');
+    }
 
-        if ($storeId !== null) {
-            $latestStore = EmployeeStore::query()
-                ->select('employee_id', DB::raw('MAX(effective_date) as effective_date'))
-                ->whereDate('effective_date', '<=', $to)
-                ->groupBy('employee_id');
+    /** One store's weekly labor %, or (combined) the mean of the stores' values that week. */
+    private function finalLabor(array $weeks, Collection $rows, ?int $storeId): array
+    {
+        return array_map(function (array $week, int $i) use ($rows, $storeId) {
+            $values = $rows->get($i, collect())
+                ->filter(fn (object $row) => $row->avg_value !== null && ($storeId === null || (int) $row->store_id === $storeId))
+                ->map(fn (object $row) => round((float) $row->avg_value * 100, 2));
 
-            $query->joinSub($latestStore, 'latest_es', fn ($join) => $join->on('latest_es.employee_id', '=', 'em.employee_id'))
-                ->join('employee_stores as es', function ($join) {
-                    $join->on('es.employee_id', '=', 'latest_es.employee_id')
-                        ->on('es.effective_date', '=', 'latest_es.effective_date');
-                })
-                ->where('es.store_id', $storeId);
-        }
-
-        $rows = $query
-            ->select('emv.column_id')
-            ->selectRaw('SUM(emv.value_numeric) as sum_value')
-            ->selectRaw('AVG(emv.value_numeric) as avg_value')
-            ->selectRaw('MIN(emv.value_numeric) as min_value')
-            ->selectRaw('MAX(emv.value_numeric) as max_value')
-            ->selectRaw('COUNT(emv.value_numeric) as count_value')
-            ->groupBy('emv.column_id')
-            ->get()
-            ->keyBy('column_id');
-
-        $result = [];
-        foreach ($columnIds as $columnId) {
-            $column = $this->columnsById->get($columnId);
-
-            if ($column === null) {
-                continue;
-            }
-
-            $row = $rows->get($columnId);
-
-            $result[$column->key] = [
-                'label' => $column->label,
-                'sum' => $row?->sum_value !== null ? round((float) $row->sum_value, 4) : null,
-                'avg' => $row?->avg_value !== null ? round((float) $row->avg_value, 4) : null,
-                'min' => $row?->min_value !== null ? round((float) $row->min_value, 4) : null,
-                'max' => $row?->max_value !== null ? round((float) $row->max_value, 4) : null,
-                'count' => $row !== null ? (int) $row->count_value : 0,
+            return [
+                'week_start' => $week[0]->toDateString(),
+                'week_end' => $week[1]->toDateString(),
+                'labor' => $values->isNotEmpty() ? round($values->avg(), 2) : null,
             ];
-        }
-
-        return $result;
+        }, $weeks, array_keys($weeks));
     }
 
     /**
@@ -534,18 +828,39 @@ class LaborReportService
     }
 
     // -------------------------------------------------------------------------
-    // Trend (trailing weeks)
+    // Trend (one entry per business week)
     // -------------------------------------------------------------------------
 
-    private function buildTrend(Store $store, CarbonImmutable $day, int $trendWeeks): array
+    private function trendEntry(array $week, int $activeStart, int $activeEnd, int $newHires, int $separations, array $metrics): array
     {
-        $entries = collect();
+        $avgHeadcount = ($activeStart + $activeEnd) / 2;
 
-        for ($i = $trendWeeks - 1; $i >= 0; $i--) {
-            [$weekStart, $weekEnd] = $this->isoBusinessWeek($day->subWeeks($i));
-            $entries->push($this->buildTrendWeek($store, $weekStart, $weekEnd));
-        }
+        $turnoverRate = $avgHeadcount > 0
+            ? round(($separations / $avgHeadcount) * 100, 2)
+            : ($separations > 0 ? 100.0 : 0.0);
 
+        $labor = $metrics['labor']['avg'] ?? null;
+
+        return [
+            'week_start' => $week[0]->toDateString(),
+            'week_end' => $week[1]->toDateString(),
+            'headcount_active_end' => $activeEnd,
+            'new_hires' => $newHires,
+            'separations' => $separations,
+            'turnover_rate_percent' => $turnoverRate,
+            'total_hours' => $metrics['total_hours']['sum'] ?? null,
+            'average_hourly_pay' => $metrics['hourly_pay']['avg'] ?? null,
+            'total_gross_pay' => $metrics['gross_pay']['sum'] ?? null,
+            'average_labor_percent' => $labor !== null ? round($labor * 100, 2) : null,
+            'total_sales' => $metrics['sales']['sum'] ?? null,
+            'average_performance_score' => $metrics['performance_score']['avg'] ?? null,
+        ];
+    }
+
+    /** The single-store page's trend: the weeks, their averages, and this week against them. */
+    private function trendWithAverages(array $entries): array
+    {
+        $entries = collect($entries);
         $averages = $this->averageTrendEntries($entries);
         $thisWeek = $entries->last();
 
@@ -575,40 +890,6 @@ class LaborReportService
         ];
     }
 
-    private function buildTrendWeek(Store $store, CarbonImmutable $weekStart, CarbonImmutable $weekEnd): array
-    {
-        $activeStart = $this->activeEmployeeIdsAsOf($store, $weekStart->subDay())->count();
-        $activeEnd = $this->activeEmployeeIdsAsOf($store, $weekEnd)->count();
-        $avgHeadcount = ($activeStart + $activeEnd) / 2;
-
-        $newHires = $this->countStatusEvents($store, [EmployeeStatus::Hired, EmployeeStatus::Rehired], $weekStart, $weekEnd);
-        $separations = $this->countStatusEvents($store, [EmployeeStatus::Resigned, EmployeeStatus::Terminated], $weekStart, $weekEnd);
-
-        $turnoverRate = $avgHeadcount > 0
-            ? round(($separations / $avgHeadcount) * 100, 2)
-            : ($separations > 0 ? 100.0 : 0.0);
-
-        $columnIds = $this->resolveColumnIds(self::HIGHLIGHT_COLUMN_KEYS);
-        $metrics = $this->aggregateMetrics(null, $store->id, $weekStart->toDateString(), $weekEnd->toDateString(), $columnIds);
-
-        $labor = $metrics['labor']['avg'] ?? null;
-
-        return [
-            'week_start' => $weekStart->toDateString(),
-            'week_end' => $weekEnd->toDateString(),
-            'headcount_active_end' => $activeEnd,
-            'new_hires' => $newHires,
-            'separations' => $separations,
-            'turnover_rate_percent' => $turnoverRate,
-            'total_hours' => $metrics['total_hours']['sum'] ?? null,
-            'average_hourly_pay' => $metrics['hourly_pay']['avg'] ?? null,
-            'total_gross_pay' => $metrics['gross_pay']['sum'] ?? null,
-            'average_labor_percent' => $labor !== null ? round($labor * 100, 2) : null,
-            'total_sales' => $metrics['sales']['sum'] ?? null,
-            'average_performance_score' => $metrics['performance_score']['avg'] ?? null,
-        ];
-    }
-
     private function averageTrendEntries(Collection $entries): array
     {
         $keys = [
@@ -627,125 +908,436 @@ class LaborReportService
     }
 
     // -------------------------------------------------------------------------
-    // Roster
+    // Roster and birthdays
     // -------------------------------------------------------------------------
 
-    private function buildRoster(Store $store, CarbonImmutable $weekStart, CarbonImmutable $weekEnd): array
-    {
-        $activeIds = $this->activeEmployeeIdsAsOf($store, $weekEnd);
-        $metricIds = $this->employeeIdsWithMetricActivity($store, $weekStart->toDateString(), $weekEnd->toDateString());
+    /**
+     * Everyone active at the stores on the range's last day, plus anyone with
+     * metrics in the range who is assigned to one of them then; their metrics
+     * summed/averaged over the whole range (never per-day rows).
+     */
+    private function buildRoster(
+        Collection $members,
+        Collection $rangeRows,
+        Collection $employees,
+        Collection $positions,
+        CarbonImmutable $asOf,
+        array $stores
+    ): array {
+        $metricStores = $rangeRows->mapWithKeys(fn (object $row) => [(int) $row->employee_id => (int) $row->store_id]);
+        $rosterStores = $metricStores->replace($members->all());
 
-        $employeeIds = $activeIds->merge($metricIds)->unique()->values();
-
-        if ($employeeIds->isEmpty()) {
+        if ($rosterStores->isEmpty()) {
             return [];
         }
 
-        $employees = Employee::query()
-            ->whereIn('id', $employeeIds)
-            ->orderBy('last_name')
-            ->orderBy('first_name')
-            ->get(['id', 'first_name', 'middle_name', 'last_name']);
-
-        $stintStarts = $this->currentStintStarts($employeeIds, $weekEnd);
-        $statuses = $this->latestStatusesAsOf($employeeIds, $weekEnd);
-        $positions = $this->latestPositionsAsOf($employeeIds, $weekEnd);
-        $pay = $this->latestPayAsOf($employeeIds, $weekEnd);
+        $employeeIds = $rosterStores->keys();
+        $stintStarts = $this->currentStintStarts($employeeIds, $asOf);
+        $statuses = $this->latestStatusesAsOf($employeeIds, $asOf);
+        $pay = $this->latestPayAsOf($employeeIds, $asOf);
+        $birthDates = $this->birthDates($employeeIds);
+        $metricsByEmployee = $rangeRows->groupBy('employee_id');
         $columnIds = $this->columnsById->keys()->all();
 
-        return $employees->map(function (Employee $employee) use (
-            $stintStarts,
-            $statuses,
-            $positions,
-            $pay,
-            $columnIds,
-            $weekStart,
-            $weekEnd
-        ) {
-            $stintStart = $stintStarts->get($employee->id);
-            $status = $statuses->get($employee->id);
-            $payRow = $pay->get($employee->id);
+        return $employees
+            ->filter(fn (Employee $employee) => $rosterStores->has($employee->id))
+            ->map(function (Employee $employee) use ($rosterStores, $stores, $stintStarts, $statuses, $positions, $pay, $birthDates, $metricsByEmployee, $columnIds, $asOf) {
+                $stintStart = $stintStarts->get($employee->id);
+                $status = $statuses->get($employee->id);
+                $payRow = $pay->get($employee->id);
 
-            $metrics = $this->aggregateMetrics($employee->id, null, $weekStart->toDateString(), $weekEnd->toDateString(), $columnIds);
-            $sparse = collect($metrics)
-                ->filter(fn (array $m) => $m['count'] > 0)
-                ->map(fn (array $m) => ['label' => $m['label'], 'sum' => $m['sum'], 'avg' => $m['avg']])
-                ->all();
+                $metrics = collect($this->formatStats($this->rawStats($metricsByEmployee->get($employee->id, collect())), $columnIds))
+                    ->filter(fn (array $m) => $m['count'] > 0)
+                    ->map(fn (array $m) => ['label' => $m['label'], 'sum' => $m['sum'], 'avg' => $m['avg']])
+                    ->all();
 
-            return [
-                'employee_id' => $employee->id,
-                'name' => $this->fullName($employee),
-                'position' => $positions->get($employee->id),
-                'status' => in_array($status, [EmployeeStatus::Resigned->value, EmployeeStatus::Terminated->value], true)
-                    ? 'inactive'
-                    : 'active',
-                'hire_date' => $stintStart?->toDateString(),
-                'tenure_days' => $stintStart !== null ? abs($weekEnd->diffInDays($stintStart)) : null,
-                'base_pay' => $payRow?->base_pay,
-                'performance_pay' => $payRow?->performance_pay,
-                'metrics' => $sparse,
-            ];
-        })->values()->all();
-    }
-
-    private function employeeIdsWithMetricActivity(Store $store, string $from, string $to): Collection
-    {
-        $latestStore = EmployeeStore::query()
-            ->select('employee_id', DB::raw('MAX(effective_date) as effective_date'))
-            ->whereDate('effective_date', '<=', $to)
-            ->groupBy('employee_id');
-
-        return DB::table('employee_metrics as em')
-            ->joinSub($latestStore, 'latest_es', fn ($join) => $join->on('latest_es.employee_id', '=', 'em.employee_id'))
-            ->join('employee_stores as es', function ($join) {
-                $join->on('es.employee_id', '=', 'latest_es.employee_id')
-                    ->on('es.effective_date', '=', 'latest_es.effective_date');
+                return [
+                    'employee_id' => $employee->id,
+                    'name' => $this->fullName($employee),
+                    'store' => $stores[$rosterStores->get($employee->id)],
+                    'position' => $positions->get($employee->id),
+                    'status' => in_array($status, $this->separatedStatuses(), true) ? 'inactive' : 'active',
+                    'hire_date' => $stintStart?->toDateString(),
+                    'tenure_days' => $stintStart !== null ? abs($asOf->diffInDays($stintStart)) : null,
+                    'base_pay' => $payRow?->base_pay,
+                    'performance_pay' => $payRow?->performance_pay,
+                    'birthday' => $birthDates->get($employee->id),
+                    'metrics' => $metrics,
+                ];
             })
-            ->where('es.store_id', $store->id)
-            ->whereBetween('em.metric_date', [$from, $to])
-            ->distinct()
-            ->pluck('em.employee_id');
+            ->values()
+            ->all();
     }
 
-    // -------------------------------------------------------------------------
-    // Shared "as of a date" lookups
-    // -------------------------------------------------------------------------
-
-    private function storeAssignedEmployeeIdsAsOf(Store $store, CarbonInterface $asOfDate): Collection
+    /** Every roster birthday whose date falls inside the range (one row per year it does). */
+    private function buildBirthdays(array $roster, CarbonImmutable $from, CarbonImmutable $to): array
     {
-        $asOf = $asOfDate->toDateString();
+        $rows = [];
 
-        $latestStore = EmployeeStore::query()
-            ->select('employee_id', DB::raw('MAX(effective_date) as effective_date'))
-            ->whereDate('effective_date', '<=', $asOf)
-            ->groupBy('employee_id');
+        foreach ($roster as $employee) {
+            if ($employee['birthday'] === null) {
+                continue;
+            }
 
-        return DB::table('employee_stores as es')
-            ->joinSub($latestStore, 'latest_es', function ($join) {
-                $join->on('latest_es.employee_id', '=', 'es.employee_id')
-                    ->on('latest_es.effective_date', '=', 'es.effective_date');
-            })
-            ->where('es.store_id', $store->id)
-            ->distinct()
-            ->pluck('es.employee_id');
-    }
+            $birth = CarbonImmutable::parse($employee['birthday']);
 
-    private function activeEmployeeIdsAsOf(Store $store, CarbonInterface $asOfDate): Collection
-    {
-        $assigned = $this->storeAssignedEmployeeIdsAsOf($store, $asOfDate);
+            for ($year = $from->year; $year <= $to->year; $year++) {
+                $date = CarbonImmutable::create($year, $birth->month, $birth->day)->startOfDay();
 
-        if ($assigned->isEmpty()) {
-            return $assigned;
+                if ($date->betweenIncluded($from, $to)) {
+                    $rows[] = [
+                        'employee_id' => $employee['employee_id'],
+                        'name' => $employee['name'],
+                        'store' => $employee['store'],
+                        'position' => $employee['position'],
+                        'birth_date' => $birth->toDateString(),
+                        'turns_age' => $year - $birth->year,
+                        'date' => $date->toDateString(),
+                    ];
+                }
+            }
         }
 
-        $statuses = $this->latestStatusesAsOf($assigned, $asOfDate);
+        usort($rows, fn (array $a, array $b) => [$a['date'], $a['name']] <=> [$b['date'], $b['name']]);
 
-        return $assigned->filter(function (int $employeeId) use ($statuses) {
-            $status = $statuses->get($employeeId);
+        return $rows;
+    }
 
-            return $status === null
-                || !in_array($status, [EmployeeStatus::Resigned->value, EmployeeStatus::Terminated->value], true);
-        })->values();
+    private function birthDates(Collection $employeeIds): Collection
+    {
+        return DB::table('employee_obsessions')
+            ->whereIntegerInRaw('employee_id', $employeeIds->all())
+            ->whereNotNull('birth_date')
+            ->pluck('birth_date', 'employee_id')
+            ->map(fn ($date) => CarbonImmutable::parse($date)->toDateString());
+    }
+
+    // -------------------------------------------------------------------------
+    // Set-based lookups: many stores, many dates or windows, one query each
+    // -------------------------------------------------------------------------
+
+    /**
+     * A date window for the derived tables below: metrics dated from..to, with
+     * store membership taken on $asOf. A window can be pinned to one store or
+     * one employee.
+     */
+    private function window(
+        int $idx,
+        CarbonInterface $from,
+        CarbonInterface $to,
+        CarbonInterface $asOf,
+        ?int $storeId = null,
+        ?int $employeeId = null
+    ): array {
+        return [
+            'idx' => $idx,
+            'from' => $from->toDateString(),
+            'to' => $to->toDateString(),
+            'as_of' => $asOf->toDateString(),
+            'store_id' => $storeId,
+            'employee_id' => $employeeId,
+        ];
+    }
+
+    /** The windows as an inline table (one SELECT per window, UNION ALL). */
+    private function windowsTable(array $windows): Builder
+    {
+        $date = in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true) ? 'CAST(? AS DATE)' : '?';
+        $columns = "? as idx, {$date} as from_date, {$date} as to_date, {$date} as as_of, ? as store_id, ? as employee_id";
+
+        $table = null;
+        foreach ($windows as $window) {
+            $row = DB::query()->selectRaw($columns, [
+                $window['idx'], $window['from'], $window['to'], $window['as_of'], $window['store_id'], $window['employee_id'],
+            ]);
+            $table = $table === null ? $row : $table->unionAll($row);
+        }
+
+        return $table;
+    }
+
+    /**
+     * Window × the employees assigned to one of the stores on the window's
+     * as_of date (their latest assignment on/before it). Each assignment is an
+     * interval up to the employee's next assignment date.
+     */
+    private function assignedOn(array $storeIds, array $windows, bool $windowStore = false): Builder
+    {
+        $intervals = DB::table('employee_stores as es')
+            ->whereIn('es.store_id', $storeIds)
+            ->select('es.employee_id', 'es.store_id', 'es.effective_date as from_date')
+            ->selectSub(fn (Builder $query) => $query
+                ->from('employee_stores as later')
+                ->selectRaw('MIN(later.effective_date)')
+                ->whereColumn('later.employee_id', 'es.employee_id')
+                ->whereColumn('later.effective_date', '>', 'es.effective_date'), 'next_date');
+
+        $query = DB::query()
+            ->fromSub($this->windowsTable($windows), 'w')
+            ->joinSub($intervals, 'iv', fn ($join) => $join->on('iv.from_date', '<=', 'w.as_of'))
+            ->where(fn (Builder $query) => $query->whereNull('iv.next_date')->orWhereColumn('iv.next_date', '>', 'w.as_of'));
+
+        if ($windowStore) {
+            $query->whereColumn('iv.store_id', 'w.store_id');
+        }
+
+        return $query;
+    }
+
+    /** As assignedOn(), minus anyone whose latest status on/before as_of is resigned/terminated. */
+    private function activeOn(array $storeIds, array $windows): Builder
+    {
+        return $this->assignedOn($storeIds, $windows)->whereNotExists(fn (Builder $query) => $query
+            ->from('employee_status_histories as h')
+            ->whereColumn('h.employee_id', 'iv.employee_id')
+            ->whereColumn('h.effective_date', '<=', 'w.as_of')
+            ->whereIn('h.status', $this->separatedStatuses())
+            ->whereNotExists(fn (Builder $newer) => $newer
+                ->from('employee_status_histories as h2')
+                ->whereColumn('h2.employee_id', 'h.employee_id')
+                ->whereColumn('h2.effective_date', '<=', 'w.as_of')
+                ->where(fn (Builder $later) => $later
+                    ->whereColumn('h2.effective_date', '>', 'h.effective_date')
+                    ->orWhere(fn (Builder $same) => $same
+                        ->whereColumn('h2.effective_date', 'h.effective_date')
+                        ->whereColumn('h2.id', '>', 'h.id')))));
+    }
+
+    /** Active employees at the stores on $asOf: employee id => store id, in id order. */
+    private function activeMembersAsOf(array $storeIds, CarbonImmutable $asOf): Collection
+    {
+        if ($storeIds === []) {
+            return collect();
+        }
+
+        return $this->activeOn($storeIds, [$this->window(0, $asOf, $asOf, $asOf)])
+            ->select('iv.employee_id', 'iv.store_id')
+            ->distinct()
+            ->orderBy('iv.employee_id')
+            ->get()
+            ->mapWithKeys(fn (object $row) => [(int) $row->employee_id => (int) $row->store_id]);
+    }
+
+    /**
+     * Active headcount per store on each date.
+     *
+     * @param  list<string>  $dates
+     * @return array<string, array<int, int>>  date => store id => count
+     */
+    private function activeCountsAsOf(array $storeIds, array $dates): array
+    {
+        if ($storeIds === [] || $dates === []) {
+            return [];
+        }
+
+        $counts = [];
+        foreach (array_chunk($dates, self::WINDOWS_PER_QUERY) as $chunk) {
+            $windows = array_map(fn (string $date, int $i) => [
+                'idx' => $i, 'from' => $date, 'to' => $date, 'as_of' => $date, 'store_id' => null, 'employee_id' => null,
+            ], $chunk, array_keys($chunk));
+
+            $rows = $this->activeOn($storeIds, $windows)
+                ->select('w.idx', 'iv.store_id')
+                ->selectRaw('COUNT(DISTINCT iv.employee_id) as n')
+                ->groupBy('w.idx', 'iv.store_id')
+                ->get();
+
+            foreach ($rows as $row) {
+                $counts[$chunk[(int) $row->idx]][(int) $row->store_id] = (int) $row->n;
+            }
+        }
+
+        return $counts;
+    }
+
+    /**
+     * SUM/AVG/MIN/MAX/COUNT over employee_metric_values per window, store and
+     * column (and employee with $byEmployee), resolved by column id rather
+     * than hardcoded IDs, so any metric column added later via CSV import shows
+     * up automatically. Rows count the metrics of everyone assigned to the
+     * store on the window's as_of date. $minSum keeps only groups whose sum is
+     * above it.
+     */
+    private function metricStats(
+        array $storeIds,
+        array $windows,
+        array $columnIds,
+        bool $byEmployee = false,
+        ?int $minSum = null,
+        bool $windowStore = false
+    ): Collection {
+        if ($storeIds === [] || $windows === [] || $columnIds === []) {
+            return collect();
+        }
+
+        return collect(array_chunk($windows, self::WINDOWS_PER_QUERY))
+            ->flatMap(function (array $chunk) use ($storeIds, $columnIds, $byEmployee, $minSum, $windowStore) {
+                $query = $this->assignedOn($storeIds, $chunk, $windowStore)
+                    ->join('employee_metrics as em', function ($join) {
+                        $join->on('em.employee_id', '=', 'iv.employee_id')
+                            ->on('em.metric_date', '>=', 'w.from_date')
+                            ->on('em.metric_date', '<=', 'w.to_date');
+                    })
+                    ->whereBetween('em.metric_date', $this->windowsSpan($chunk))
+                    ->select('w.idx', 'iv.store_id')
+                    ->groupBy('w.idx', 'iv.store_id');
+
+                if ($byEmployee) {
+                    $query->addSelect('em.employee_id')->groupBy('em.employee_id');
+                }
+
+                $this->withColumnStats($query, $columnIds);
+
+                if ($minSum !== null) {
+                    $query->havingRaw('SUM(emv.value_numeric) > ?', [$minSum]);
+                }
+
+                return $query->get();
+            })
+            ->values();
+    }
+
+    /** The same aggregates per window and column for windows pinned to one employee. */
+    private function employeeWindowStats(array $windows, array $columnIds): Collection
+    {
+        if ($windows === [] || $columnIds === []) {
+            return collect();
+        }
+
+        return collect(array_chunk($windows, self::WINDOWS_PER_QUERY))
+            ->flatMap(fn (array $chunk) => $this->withColumnStats(
+                DB::query()
+                    ->fromSub($this->windowsTable($chunk), 'w')
+                    ->join('employee_metrics as em', function ($join) {
+                        $join->on('em.employee_id', '=', 'w.employee_id')
+                            ->on('em.metric_date', '>=', 'w.from_date')
+                            ->on('em.metric_date', '<=', 'w.to_date');
+                    })
+                    ->whereBetween('em.metric_date', $this->windowsSpan($chunk))
+                    ->select('w.idx')
+                    ->groupBy('w.idx'),
+                $columnIds,
+            )->get())
+            ->values();
+    }
+
+    /**
+     * The first and last metric date over the windows. Stated on the metrics
+     * table itself so the planner reaches it by date index, not by scanning it
+     * once per window.
+     */
+    private function windowsSpan(array $windows): array
+    {
+        return [min(array_column($windows, 'from')), max(array_column($windows, 'to'))];
+    }
+
+    private function withColumnStats(Builder $query, array $columnIds): Builder
+    {
+        return $query
+            ->join('employee_metric_values as emv', 'emv.employee_metric_id', '=', 'em.id')
+            ->whereIn('emv.column_id', $columnIds)
+            ->addSelect('emv.column_id')
+            ->groupBy('emv.column_id')
+            ->selectRaw('SUM(emv.value_numeric) as sum_value')
+            ->selectRaw('AVG(emv.value_numeric) as avg_value')
+            ->selectRaw('MIN(emv.value_numeric) as min_value')
+            ->selectRaw('MAX(emv.value_numeric) as max_value')
+            ->selectRaw('COUNT(emv.value_numeric) as count_value');
+    }
+
+    /**
+     * Folds stat rows into one figure per column: a lone row is taken as is,
+     * several (stores, employees) are combined — sums and counts add up, the
+     * average is the combined sum over the combined count.
+     *
+     * @return array<int, array{sum: ?float, avg: ?float, min: ?float, max: ?float, count: int}>
+     */
+    private function rawStats(Collection $rows): array
+    {
+        $float = fn ($value) => $value !== null ? (float) $value : null;
+        $stats = [];
+
+        foreach ($rows->groupBy('column_id') as $columnId => $group) {
+            if ($group->count() === 1) {
+                $row = $group->first();
+                $stats[$columnId] = [
+                    'sum' => $float($row->sum_value),
+                    'avg' => $float($row->avg_value),
+                    'min' => $float($row->min_value),
+                    'max' => $float($row->max_value),
+                    'count' => (int) $row->count_value,
+                ];
+
+                continue;
+            }
+
+            $values = fn (string $key) => $group->pluck($key)->reject(fn ($v) => $v === null)->map(fn ($v) => (float) $v);
+            $sums = $values('sum_value');
+            $count = (int) $group->sum(fn (object $row) => (int) $row->count_value);
+            $sum = $sums->isNotEmpty() ? $sums->sum() : null;
+
+            $stats[$columnId] = [
+                'sum' => $sum,
+                'avg' => ($sum !== null && $count > 0) ? $sum / $count : null,
+                'min' => $values('min_value')->min(),
+                'max' => $values('max_value')->max(),
+                'count' => $count,
+            ];
+        }
+
+        return $stats;
+    }
+
+    /**
+     * One entry per requested column, keyed by column key.
+     *
+     * @return array<string, array{label: string, sum: ?float, avg: ?float, min: ?float, max: ?float, count: int}>
+     */
+    private function formatStats(array $rawStats, array $columnIds): array
+    {
+        $round = fn (?float $value) => $value !== null ? round($value, 4) : null;
+        $result = [];
+
+        foreach ($columnIds as $columnId) {
+            $column = $this->columnsById->get($columnId);
+
+            if ($column === null) {
+                continue;
+            }
+
+            $stats = $rawStats[$columnId] ?? null;
+
+            $result[$column->key] = [
+                'label' => $column->label,
+                'sum' => $round($stats['sum'] ?? null),
+                'avg' => $round($stats['avg'] ?? null),
+                'min' => $round($stats['min'] ?? null),
+                'max' => $round($stats['max'] ?? null),
+                'count' => $stats['count'] ?? 0,
+            ];
+        }
+
+        return $result;
+    }
+
+    // -------------------------------------------------------------------------
+    // Per-employee "as of a date" lookups
+    // -------------------------------------------------------------------------
+
+    /** id => Employee, in last name / first name order. */
+    private function employees(Collection $employeeIds): Collection
+    {
+        if ($employeeIds->isEmpty()) {
+            return collect();
+        }
+
+        return Employee::query()
+            ->whereIntegerInRaw('id', $employeeIds->all())
+            ->orderBy('last_name')
+            ->orderBy('first_name')
+            ->get(['id', 'first_name', 'middle_name', 'last_name'])
+            ->keyBy('id')
+            ->toBase();
     }
 
     private function latestStatusesAsOf(Collection $employeeIds, CarbonInterface $asOf): Collection
@@ -755,7 +1347,7 @@ class LaborReportService
         }
 
         $rows = EmployeeStatusHistory::query()
-            ->whereIn('employee_id', $employeeIds)
+            ->whereIntegerInRaw('employee_id', $employeeIds->all())
             ->whereDate('effective_date', '<=', $asOf->toDateString())
             ->orderByDesc('effective_date')
             ->orderByDesc('id')
@@ -772,7 +1364,7 @@ class LaborReportService
 
         $latest = EmployeePosition::query()
             ->select('employee_id', DB::raw('MAX(effective_date) as effective_date'))
-            ->whereIn('employee_id', $employeeIds)
+            ->whereIntegerInRaw('employee_id', $employeeIds->all())
             ->whereDate('effective_date', '<=', $asOf->toDateString())
             ->groupBy('employee_id');
 
@@ -795,7 +1387,7 @@ class LaborReportService
         }
 
         $rows = EmployeePayHistory::query()
-            ->whereIn('employee_id', $employeeIds)
+            ->whereIntegerInRaw('employee_id', $employeeIds->all())
             ->whereDate('effective_date', '<=', $asOf->toDateString())
             ->orderByDesc('effective_date')
             ->orderByDesc('id')
@@ -807,6 +1399,11 @@ class LaborReportService
     // -------------------------------------------------------------------------
     // Small utilities
     // -------------------------------------------------------------------------
+
+    private function separatedStatuses(): array
+    {
+        return [EmployeeStatus::Resigned->value, EmployeeStatus::Terminated->value];
+    }
 
     private function loadColumns(): void
     {

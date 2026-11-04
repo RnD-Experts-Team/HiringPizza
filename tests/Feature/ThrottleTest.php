@@ -110,10 +110,10 @@ class ThrottleTest extends TestCase
         RateLimiter::for('api-heavy-multi', fn (Request $request) => Limit::perMinute(1)->by('t:'.$request->bearerToken()));
 
         // No stores or dates: refused by validation, after the token check.
-        $this->getJson('/api/v1/reports', $this->headers())->assertStatus(422);
+        $this->getJson('/api/v1/reports/labor', $this->headers())->assertStatus(422);
         $sent = count(Http::recorded());
 
-        $this->getJson('/api/v1/reports', $this->headers())->assertStatus(429);
+        $this->getJson('/api/v1/reports/labor', $this->headers())->assertStatus(429);
 
         $this->assertCount($sent, Http::recorded());
     }
@@ -195,7 +195,7 @@ class ThrottleTest extends TestCase
     public function test_the_multi_store_report_has_its_own_tighter_limits(): void
     {
         $limits = collect(RateLimiter::limiter('api-heavy-multi')(
-            Request::create('/api/v1/reports', 'GET', server: ['HTTP_AUTHORIZATION' => 'Bearer 1|test-token'])
+            Request::create('/api/v1/reports/labor', 'GET', server: ['HTTP_AUTHORIZATION' => 'Bearer 1|test-token'])
         ));
 
         $this->assertSame([20, 5, 30], $limits->pluck('maxAttempts')->all());
