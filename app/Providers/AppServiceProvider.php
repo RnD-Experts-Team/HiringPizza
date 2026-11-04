@@ -79,7 +79,7 @@ class AppServiceProvider extends ServiceProvider
             Limit::perHour(200)->by('target:h:'.self::tokenKey($request)),
         ]);
 
-        // GET v1/reports: any number of stores over any date range.
+        // GET v1/reports/labor: any number of stores over any date range.
         RateLimiter::for('api-heavy-multi', fn (Request $request) => [
             Limit::perMinute(20)->by(self::tokenKey($request)),
             Limit::perMinute(5)->by('target:m:'.self::tokenKey($request)),

@@ -65,10 +65,12 @@ Route::prefix('v1')->middleware(['throttle:api', 'auth.token.store'])->group(fun
     Route::put('reference-catalog', [ReferenceCatalogController::class, 'sync'])
         ->name('api.v1.reference-catalog.sync');
 
-    // Multi-store date-range report: stores[] query param (or stores[]=all), start_date, end_date.
-    Route::get('reports', [ManagerDashboardController::class, 'reportsMultiStore'])
+    // Labor report for any stores over any inclusive range (Business Reports):
+    // stores[] query param (store numbers, or stores[]=all), start_date, end_date.
+    // Literal path, so it must stay above reports/{store}/{date}.
+    Route::get('reports/labor', [LaborController::class, 'range'])
         ->middleware('throttle:api-heavy-multi')
-        ->name('api.v1.reports.multi');
+        ->name('api.v1.reports.labor');
 
     // Combined manager-dashboard page report (one call instead of three).
     Route::get('reports/{store}/{date}', [ManagerDashboardController::class, 'reports'])
