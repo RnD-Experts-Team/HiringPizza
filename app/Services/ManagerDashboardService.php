@@ -7,6 +7,7 @@ use App\Models\Employee;
 use App\Models\EmployeeMetric;
 use App\Models\EmployeeStore;
 use App\Models\Store;
+use App\Models\StorePayrollWeek;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
@@ -192,6 +193,14 @@ class ManagerDashboardService
             ->get()
             ->keyBy('week_index');
 
+        // Weeks before employee metrics: the payroll sheet's payroll-to-sales %.
+        $payrollLabor = StorePayrollWeek::query()
+            ->whereHas('store', fn ($q) => $q->where('store_number', $store))
+            ->whereBetween('week_start', [$overallStart, $weeks[5]['week_start']])
+            ->whereNotNull('labor_percent')
+            ->get()
+            ->mapWithKeys(fn (StorePayrollWeek $week) => [$week->week_start->toDateString() => round((float) $week->labor_percent, 2)]);
+
         $entries = [];
         foreach ($weeks as $index => $week) {
             $entries[] = [
@@ -199,7 +208,7 @@ class ManagerDashboardService
                 'week_end'    => $week['week_end'],
                 'labor'       => isset($rows[$index]) && $rows[$index]->labor !== null
                     ? round((float) $rows[$index]->labor * 100, 2)
-                    : null,
+                    : $payrollLabor->get($week['week_start']),
                 'total_hours' => isset($rows[$index])
                     ? round((float) $rows[$index]->total_hours, 2)
                     : 0,
