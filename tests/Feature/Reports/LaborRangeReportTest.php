@@ -137,7 +137,8 @@ class LaborRangeReportTest extends TestCase
 
         // Bob (active on 10-19) resigned on 10-22: 2 → 1, one separation, 1 / 1.5.
         $this->assertSame([
-            'active_start' => 2, 'active_end' => 1, 'new_hires' => 0, 'separations' => 1, 'net_change' => -1,
+            'active_start' => 2, 'active_end' => 1, 'new_hires' => 0, 'separations' => 1,
+            'transfers_in' => 0, 'transfers_out' => 0, 'net_change' => -1,
             'by_position' => [['position' => 'Cook', 'count' => 1]],
         ], $combined['headcount']);
         $this->assertSame(Arr::except($week['headcount'], ['active_start_of_week', 'active_end_of_week']), Arr::except($combined['headcount'], ['active_start', 'active_end']));
@@ -250,6 +251,139 @@ class LaborRangeReportTest extends TestCase
 
         $this->assertSame(['2026-10-14', '2026-10-22'], array_column($combined['birthdays'], 'date'));
         $this->assertSame([26, 36], array_column($combined['birthdays'], 'turns_age'));
+    }
+
+    /**
+     * Records as they really get entered: a second separation for someone
+     * already gone, a "hired" record written when someone moves stores, a hire
+     * dated before the store assignment, a "resigned" before the hire. Hires
+     * and separations follow the people, so start + moves = end.
+     */
+    public function test_hires_and_separations_follow_the_people_not_the_records(): void
+    {
+        $stamp = ['created_at' => now(), 'updated_at' => now()];
+        foreach ([[5, 'Eve'], [6, 'Fay'], [7, 'Gus'], [8, 'Hal'], [9, 'Ivy']] as [$id, $first]) {
+            DB::table('employees')->insert([
+                'id' => $id, 'first_name' => $first, 'last_name' => 'Doe', 'gender' => 'female',
+                'ssn' => 'secret-'.$id, 'employment_type' => 'W2', ...$stamp,
+            ]);
+        }
+        DB::table('employee_stores')->insert([
+            ['employee_id' => 5, 'store_id' => 1, 'effective_date' => '2026-05-01', ...$stamp],
+            ['employee_id' => 6, 'store_id' => 1, 'effective_date' => '2026-06-01', ...$stamp],
+            ['employee_id' => 6, 'store_id' => 2, 'effective_date' => '2026-10-21', ...$stamp],
+            ['employee_id' => 7, 'store_id' => 2, 'effective_date' => '2026-10-22', ...$stamp],
+            ['employee_id' => 8, 'store_id' => 1, 'effective_date' => '2026-10-23', ...$stamp],
+            ['employee_id' => 9, 'store_id' => 1, 'effective_date' => '2026-08-01', ...$stamp],
+        ]);
+        DB::table('employee_status_histories')->insert([
+            // Eve resigned, then was terminated as well: one separation.
+            ['employee_id' => 5, 'status' => 'hired', 'effective_date' => '2026-05-01', 'store_id' => 1, ...$stamp],
+            ['employee_id' => 5, 'status' => 'resigned', 'effective_date' => '2026-10-21', 'store_id' => 1, ...$stamp],
+            ['employee_id' => 5, 'status' => 'terminated', 'effective_date' => '2026-10-23', 'store_id' => 1, ...$stamp],
+            // Fay moved to store 2 with a new "hired" record: a transfer, not a hire.
+            ['employee_id' => 6, 'status' => 'hired', 'effective_date' => '2026-06-01', 'store_id' => 1, ...$stamp],
+            ['employee_id' => 6, 'status' => 'hired', 'effective_date' => '2026-10-21', 'store_id' => 2, ...$stamp],
+            // Gus: hired 10-01 but at the store only from 10-22 — a hire on 10-22.
+            ['employee_id' => 7, 'status' => 'hired', 'effective_date' => '2026-10-01', 'store_id' => 2, ...$stamp],
+            // Hal: a "resigned" before he was ever hired, then hired — one hire.
+            ['employee_id' => 8, 'status' => 'resigned', 'effective_date' => '2026-10-20', 'store_id' => 1, ...$stamp],
+            ['employee_id' => 8, 'status' => 'hired', 'effective_date' => '2026-10-23', 'store_id' => 1, ...$stamp],
+            // Ivy left in September and was terminated again in the range: nothing.
+            ['employee_id' => 9, 'status' => 'hired', 'effective_date' => '2026-08-01', 'store_id' => 1, ...$stamp],
+            ['employee_id' => 9, 'status' => 'terminated', 'effective_date' => '2026-09-01', 'store_id' => 1, ...$stamp],
+            ['employee_id' => 9, 'status' => 'terminated', 'effective_date' => '2026-10-24', 'store_id' => 1, ...$stamp],
+        ]);
+
+        $range = $this->report(['03795-00044', '03795-00042'], '2026-10-20', '2026-10-26');
+        $pick = fn (array $h) => Arr::only($h, ['active_start', 'active_end', 'new_hires', 'separations', 'transfers_in', 'transfers_out', 'net_change']);
+
+        // Ann, Bob, Cy, Dee, Eve, Fay → Ann, Cy, Dee, Fay, Gus, Hal. Fay's move is in and out within the stores.
+        $this->assertSame(
+            ['active_start' => 6, 'active_end' => 6, 'new_hires' => 2, 'separations' => 2, 'transfers_in' => 1, 'transfers_out' => 1, 'net_change' => 0],
+            $pick($range['combined']['headcount']),
+        );
+        $this->assertSame(
+            ['active_start' => 4, 'active_end' => 2, 'new_hires' => 1, 'separations' => 2, 'transfers_in' => 0, 'transfers_out' => 1, 'net_change' => -2],
+            $pick($range['by_store']['03795-00044']['headcount']),
+        );
+        $this->assertSame(
+            ['active_start' => 2, 'active_end' => 4, 'new_hires' => 1, 'separations' => 0, 'transfers_in' => 1, 'transfers_out' => 0, 'net_change' => 2],
+            $pick($range['by_store']['03795-00042']['headcount']),
+        );
+
+        // One turnover event per person who left: Eve (her resignation) and Bob.
+        $events = $range['combined']['turnover']['events'];
+        $this->assertSame(['Eve Doe', 'Bob Ray'], array_column($events, 'name'));
+        $this->assertSame(['voluntary', 'voluntary'], array_column($events, 'type'));
+        $this->assertSame(2, $range['combined']['turnover']['separations_count']);
+
+        // The weekly trend counts the same moves.
+        $this->assertSame([2, 2], [$range['combined']['trend'][0]['new_hires'], $range['combined']['trend'][0]['separations']]);
+    }
+
+    /**
+     * Weeks before employee metrics: the payroll sheet's total payroll and
+     * payroll-to-sales % come back as the gross pay and final labor; a
+     * store-week with metrics never reads the sheet.
+     */
+    public function test_weeks_without_metrics_use_the_payroll_sheet(): void
+    {
+        $stamp = ['created_at' => now(), 'updated_at' => now()];
+        $week = fn (int $store, string $start, string $end, float $payroll, float $labor) => [
+            'store_id' => $store, 'week_start' => $start, 'week_end' => $end,
+            'total_payroll' => $payroll, 'labor_percent' => $labor, ...$stamp,
+        ];
+        DB::table('store_payroll_weeks')->insert([
+            $week(1, '2026-09-29', '2026-10-05', 2500, 25),
+            $week(1, '2026-10-06', '2026-10-12', 2000, 20),
+            $week(2, '2026-10-06', '2026-10-12', 1500, 30),
+            // Store 1 has metrics that week (23%): the sheet's row is never used.
+            $week(1, '2026-10-20', '2026-10-26', 5000, 50),
+        ]);
+
+        $old = $this->report(['03795-00044', '03795-00042'], '2026-09-29', '2026-10-12');
+        $combined = $old['combined'];
+        $this->assertEquals(
+            [['week_start' => '2026-09-29', 'week_end' => '2026-10-05', 'labor' => 25],
+                ['week_start' => '2026-10-06', 'week_end' => '2026-10-12', 'labor' => 25]],
+            $combined['final_labor'],
+        );
+        $this->assertEquals([20, 30], [
+            $old['by_store']['03795-00044']['final_labor'][1]['labor'], $old['by_store']['03795-00042']['final_labor'][1]['labor'],
+        ]);
+        $this->assertEquals([6000, 25], [$combined['labor']['highlights']['total_gross_pay'], $combined['labor']['highlights']['average_labor_percent']]);
+        $this->assertEquals([2500, 3500], array_column($combined['trend'], 'total_gross_pay'));
+        $this->assertEquals([25, 25], array_column($combined['trend'], 'average_labor_percent'));
+
+        $now = $this->report(['03795-00044'], '2026-10-20', '2026-10-26')['combined'];
+        $this->assertEquals([['week_start' => '2026-10-20', 'week_end' => '2026-10-26', 'labor' => 23]], $now['final_labor']);
+        $this->assertNull($now['labor']['highlights']['total_gross_pay']);
+        // (Dashboard V1's weekly labor uses MySQL-only SQL, so it is not run here.)
+    }
+
+    public function test_the_payroll_sheet_loads_from_csv(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'payroll');
+        file_put_contents($path, implode("\n", [
+            'Sart Date,End Date,Franchise-Number,Royalty-Obligation,Net Pay Allocations,Employee Withholdings,Total Deductions,TIPS,Positive,Money Owed,AMZ/WM/OT,Team Profit Sharing ,Bread Boost Bonus,Store Deductions,Total payroll,Payroll to Sales',
+            '12/30/2025,1/5/2026,03795-00044,"$20,000.00",4000,100,500,300,0,40,0,200,,40,"$5,000.00",0.2216',
+            '2025-12-30,2026-01-05,03795-00042,0,100,,,,,,,,,,100,#DIV/0!',
+            '2025-12-30,2026-01-05,99999-00001,100,1,,,,,,,,,,1,0.01',
+            '2025-12-31,2026-01-06,03795-00044,100,1,,,,,,,,,,1,0.01',
+            ',,,,,,,,,,,,,,0,#DIV/0!',
+        ]));
+
+        $this->artisan('hiring:import-payroll-weeks', ['path' => $path])->assertSuccessful();
+        $this->artisan('hiring:import-payroll-weeks', ['path' => $path])->assertSuccessful();
+        unlink($path);
+
+        // Store 1 is 03795-00044; store 2 (03795-00042) had #DIV/0!: no labor %.
+        $rows = DB::table('store_payroll_weeks')->orderBy('store_id')->get();
+        $this->assertCount(2, $rows);
+        $this->assertEquals([1, 5000, 22.16], [$rows[0]->store_id, $rows[0]->total_payroll, $rows[0]->labor_percent]);
+        $this->assertEquals([2, 100, null], [$rows[1]->store_id, $rows[1]->total_payroll, $rows[1]->labor_percent]);
+        $this->assertSame('2026-01-05', substr((string) $rows[0]->week_end, 0, 10));
     }
 
     public function test_bad_input_is_a_422(): void
