@@ -230,11 +230,12 @@ class LaborReportService
         $trendRows = $this->metricStats($storeIds, $weekWindows, $this->resolveColumnIds(self::HIGHLIGHT_COLUMN_KEYS))
             ->groupBy('idx')
             ->map(fn (Collection $rows) => $rows->groupBy('store_id'));
-        // Weekly labor readings per store; a store-week without any (the weeks
-        // before employee metrics) returns the payroll sheet's total payroll
-        // and payroll-to-sales % in their place.
+        // The payroll weeks model: each store-week's total payroll (final labor
+        // is that ÷ royalty obligation, worked out by the caller). A store-week
+        // with no employee metrics also returns its payroll sheet figures in
+        // their place.
         $laborRows = $this->finalLaborRows($storeIds, $weeks);
-        $payrollWeeks = $this->payrollFallbackWeeks($storeIds, $weeks, $laborRows);
+        $payrollWeeks = $this->payrollWeeks($storeIds, $weeks, $laborRows);
         // The weeks the report is about: every week of a range, or the one week.
         $mainWeeks = $range ? array_keys($weeks) : [count($weeks) - 1];
 
@@ -287,7 +288,7 @@ class LaborReportService
             $trend = array_map(function (array $week, int $i) use ($activeAt, $moves, $trendRows, $storeId, $storePayroll) {
                 $weekCounts = $moves['weeks'][$i] ?? [];
 
-                return $this->fillFromPayroll($storePayroll->where('idx', $i), $this->trendEntry(
+                return $this->fillFromPayroll($storePayroll->where('idx', $i)->where('has_metrics', false), $this->trendEntry(
                     $week,
                     $activeAt($week[0]->subDay(), $storeId),
                     $activeAt($week[1], $storeId),
@@ -305,7 +306,10 @@ class LaborReportService
             $storeOvertime = $inStore($overtimeRows);
             $overtime = $this->overtimeBlock($storeOvertime, $withLists);
             $averages = $this->averageTrendEntries(collect($trend));
-            $highlights = $this->fillFromPayroll($storePayroll->whereIn('idx', $mainWeeks), $this->buildHighlights($metrics, $activeEnd));
+            $highlights = $this->fillFromPayroll(
+                $storePayroll->whereIn('idx', $mainWeeks)->where('has_metrics', false),
+                $this->buildHighlights($metrics, $activeEnd),
+            );
             if ($highlights['total_gross_pay'] !== null && $activeEnd > 0) {
                 $highlights['average_gross_pay_per_employee'] = round($highlights['total_gross_pay'] / $activeEnd, 2);
             }
@@ -336,7 +340,7 @@ class LaborReportService
 
             if ($range) {
                 $result['pay'] = $this->payBlock($rangeStats);
-                $result['final_labor'] = $this->finalLabor($weeks, $laborRows, $storePayroll, $storeId);
+                $result['final_labor'] = $this->finalLabor($weeks, $storePayroll);
             }
 
             return $result;
@@ -898,34 +902,32 @@ class LaborReportService
     }
 
     /**
-     * One store's weekly labor %, or (combined) the mean of the stores' values
-     * that week; a store-week with no readings uses the payroll sheet's
-     * payroll-to-sales %.
+     * Each week's total payroll from the payroll weeks model (one store's, or
+     * the stores' added up); null for a week the model has no payroll for.
+     * Final labor is this ÷ the week's royalty obligation × 100 — the caller
+     * divides, store-week by store-week, so weeks without payroll are left out.
      */
-    private function finalLabor(array $weeks, Collection $rows, Collection $payroll, ?int $storeId): array
+    private function finalLabor(array $weeks, Collection $payroll): array
     {
-        return array_map(function (array $week, int $i) use ($rows, $payroll, $storeId) {
-            $values = $rows->get($i, collect())
-                ->filter(fn (object $row) => $row->avg_value !== null && ($storeId === null || (int) $row->store_id === $storeId))
-                ->map(fn (object $row) => round((float) $row->avg_value * 100, 2))
-                ->merge($payroll->where('idx', $i)->pluck('labor_percent')->filter(fn ($v) => $v !== null));
+        return array_map(function (array $week, int $i) use ($payroll) {
+            $totals = $payroll->where('idx', $i)->pluck('total_payroll')->filter(fn ($v) => $v !== null);
 
             return [
                 'week_start' => $week[0]->toDateString(),
                 'week_end' => $week[1]->toDateString(),
-                'labor' => $values->isNotEmpty() ? round($values->avg(), 2) : null,
+                'payroll' => $totals->isNotEmpty() ? round((float) $totals->sum(), 2) : null,
             ];
         }, $weeks, array_keys($weeks));
     }
 
     /**
-     * The payroll sheet's store-weeks that have no labor readings (the weeks
-     * before employee metrics). Store-weeks with readings never use it.
+     * The payroll weeks model's store-weeks in the report's weeks, each flagged
+     * whether that store-week also has employee metrics (labor readings).
      *
      * @param  list<array{0: CarbonImmutable, 1: CarbonImmutable}>  $weeks
-     * @return Collection<int, array{idx: int, store_id: int, total_payroll: ?float, labor_percent: ?float}>
+     * @return Collection<int, array{idx: int, store_id: int, total_payroll: ?float, labor_percent: ?float, has_metrics: bool}>
      */
-    private function payrollFallbackWeeks(array $storeIds, array $weeks, Collection $laborRows): Collection
+    private function payrollWeeks(array $storeIds, array $weeks, Collection $laborRows): Collection
     {
         if ($weeks === []) {
             return collect();
@@ -950,7 +952,7 @@ class LaborReportService
             ->get()
             ->map(function (StorePayrollWeek $week) use ($weekIndex, $covered) {
                 $idx = $weekIndex[$week->week_start->toDateString()] ?? null;
-                if ($idx === null || isset($covered[$idx][$week->store_id])) {
+                if ($idx === null) {
                     return null;
                 }
 
@@ -959,6 +961,7 @@ class LaborReportService
                     'store_id' => (int) $week->store_id,
                     'total_payroll' => $week->total_payroll !== null ? (float) $week->total_payroll : null,
                     'labor_percent' => $week->labor_percent !== null ? round((float) $week->labor_percent, 2) : null,
+                    'has_metrics' => isset($covered[$idx][$week->store_id]),
                 ];
             })
             ->filter()
