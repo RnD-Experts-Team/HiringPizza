@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\Store;
+use App\Models\StorePayrollWeek;
+use Carbon\CarbonImmutable;
 use App\Services\EmployeeWorkflowService;
 use App\Services\LaborReportService;
 use Illuminate\Http\JsonResponse;
@@ -35,6 +37,47 @@ class LaborController extends Controller
      */
     public function range(Request $request): JsonResponse
     {
+        [$stores, $validated] = $this->rangeInput($request);
+
+        return response()->json(
+            $this->laborReportService->getRangeReport($stores, $validated['start_date'], $validated['end_date'])
+        );
+    }
+
+    /**
+     * Total payroll per store and Tue–Mon week from the payroll weeks model —
+     * one indexed query, so Business Reports' final labor (payroll ÷ royalty
+     * obligation) never waits on the full Labor report. Weeks overlapping the
+     * range; a store-week without payroll is absent.
+     */
+    public function payrollWeeks(Request $request): JsonResponse
+    {
+        [$stores, $validated] = $this->rangeInput($request);
+        $numbers = $stores->pluck('store_number', 'id');
+        $byStore = [];
+
+        StorePayrollWeek::query()
+            ->whereIn('store_id', $numbers->keys())
+            ->whereNotNull('total_payroll')
+            ->whereBetween('week_start', [
+                CarbonImmutable::parse($validated['start_date'])->subDays(6)->toDateString(),
+                $validated['end_date'],
+            ])
+            ->get(['store_id', 'week_start', 'total_payroll'])
+            ->each(function (StorePayrollWeek $week) use ($numbers, &$byStore) {
+                $byStore[$numbers[$week->store_id]][$week->week_start->toDateString()] = (float) $week->total_payroll;
+            });
+
+        return response()->json(['by_store' => (object) $byStore]);
+    }
+
+    /**
+     * stores[] (store numbers, or stores[]=all), start_date and end_date.
+     *
+     * @return array{0: \Illuminate\Support\Collection<int, Store>, 1: array<string, mixed>}
+     */
+    private function rangeInput(Request $request): array
+    {
         $validated = $request->validate([
             'stores' => ['required', 'array', 'min:1'],
             'stores.*' => ['required', 'string'],
@@ -55,8 +98,6 @@ class LaborController extends Controller
             }
         }
 
-        return response()->json(
-            $this->laborReportService->getRangeReport($stores, $validated['start_date'], $validated['end_date'])
-        );
+        return [$stores, $validated];
     }
 }

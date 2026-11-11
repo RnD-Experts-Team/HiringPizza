@@ -186,7 +186,6 @@ class LaborRangeReportTest extends TestCase
             'average_hourly_pay' => 13.8, 'maximum_hourly_pay' => 15, 'minimum_hourly_pay' => 12,
             'total_tips' => 40, 'total_hours' => 111, 'tips_per_hour' => 0.36,
         ], $combined['pay']);
-        $this->assertEquals([['week_start' => '2026-10-20', 'week_end' => '2026-10-26', 'payroll' => null]], $combined['final_labor']);
         $this->assertSame([['employee_id' => 1, 'name' => 'Ann Lee', 'store' => '03795-00044', 'position' => 'Cook',
             'birth_date' => '1990-10-22', 'turns_age' => 36, 'date' => '2026-10-22']], $combined['birthdays']);
     }
@@ -214,9 +213,6 @@ class LaborRangeReportTest extends TestCase
         $this->assertEquals(13.83, $combined['labor']['highlights']['average_hourly_pay']);
         $this->assertEquals(41, $range['by_store']['03795-00042']['labor']['highlights']['total_hours']);
 
-        // Final labor's payroll comes only from the payroll weeks model: none here.
-        $this->assertNull($combined['final_labor'][0]['payroll']);
-        $this->assertNull($range['by_store']['03795-00042']['final_labor'][0]['payroll']);
 
         foreach ($range['by_store'] as $block) {
             $this->assertArrayNotHasKey('roster', $block);
@@ -323,9 +319,9 @@ class LaborRangeReportTest extends TestCase
     }
 
     /**
-     * Final labor's payroll always comes from the payroll weeks model (the
-     * caller divides by royalty obligation). A store-week with no employee
-     * metrics also returns the sheet's payroll as gross pay and its labor %.
+     * Payroll per store-week comes from the payroll weeks model (the dashboard
+     * divides by royalty obligation). A store-week with no employee metrics
+     * also returns the sheet's payroll as gross pay and its labor %.
      */
     public function test_weeks_without_metrics_use_the_payroll_sheet(): void
     {
@@ -344,20 +340,20 @@ class LaborRangeReportTest extends TestCase
 
         $old = $this->report(['03795-00044', '03795-00042'], '2026-09-29', '2026-10-12');
         $combined = $old['combined'];
-        $this->assertEquals(
-            [['week_start' => '2026-09-29', 'week_end' => '2026-10-05', 'payroll' => 2500],
-                ['week_start' => '2026-10-06', 'week_end' => '2026-10-12', 'payroll' => 3500]],
-            $combined['final_labor'],
-        );
-        $this->assertEquals([2000, 1500], [
-            $old['by_store']['03795-00044']['final_labor'][1]['payroll'], $old['by_store']['03795-00042']['final_labor'][1]['payroll'],
-        ]);
+        // Payroll per store-week for final labor (payroll ÷ royalty, done by the dashboard).
+        $payroll = $this->getJson('/api/v1/reports/payroll-weeks?'.http_build_query([
+            'stores' => ['03795-00044', '03795-00042'], 'start_date' => '2026-09-30', 'end_date' => '2026-10-26',
+        ]), $this->headers())->assertOk()->json('by_store');
+        $this->assertEquals([
+            '03795-00044' => ['2026-09-29' => 2500, '2026-10-06' => 2000, '2026-10-20' => 5000],
+            '03795-00042' => ['2026-10-06' => 1500],
+        ], $payroll);
+
         $this->assertEquals([6000, 25], [$combined['labor']['highlights']['total_gross_pay'], $combined['labor']['highlights']['average_labor_percent']]);
         $this->assertEquals([2500, 3500], array_column($combined['trend'], 'total_gross_pay'));
         $this->assertEquals([25, 25], array_column($combined['trend'], 'average_labor_percent'));
 
         $now = $this->report(['03795-00044'], '2026-10-20', '2026-10-26')['combined'];
-        $this->assertEquals([['week_start' => '2026-10-20', 'week_end' => '2026-10-26', 'payroll' => 5000]], $now['final_labor']);
         $this->assertNull($now['labor']['highlights']['total_gross_pay']);
         // (Dashboard V1's weekly labor uses MySQL-only SQL, so it is not run here.)
     }
