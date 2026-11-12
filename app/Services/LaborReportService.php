@@ -36,6 +36,9 @@ use Illuminate\Support\Facades\DB;
  */
 class LaborReportService
 {
+    /** Percentages (labor %, turnover, change vs average) are sent with 3 decimals. */
+    private const PCT_DECIMALS = 3;
+
     private const DEFAULT_TREND_WEEKS = 6;
 
     private const MAX_TREND_WEEKS = 12;
@@ -701,7 +704,7 @@ class LaborReportService
 
         $count = $events->count();
         $turnoverRate = $avgHeadcount > 0
-            ? round(($count / $avgHeadcount) * 100, 2)
+            ? round(($count / $avgHeadcount) * 100, self::PCT_DECIMALS)
             : ($count > 0 ? 100.0 : 0.0);
 
         $block = [
@@ -865,7 +868,7 @@ class LaborReportService
             'average_gross_pay_per_employee' => ($totalGrossPay !== null && $activeCount > 0)
                 ? round($totalGrossPay / $activeCount, 2)
                 : null,
-            'average_labor_percent' => $labor !== null ? round($labor * 100, 2) : null,
+            'average_labor_percent' => $labor !== null ? round($labor * 100, self::PCT_DECIMALS) : null,
             'total_sales' => $get('sales', 'sum') !== null ? round($get('sales', 'sum'), 2) : null,
             'total_tips' => $get('total_tips', 'sum') !== null ? round($get('total_tips', 'sum'), 2) : null,
             'average_performance_score' => $get('performance_score', 'avg') !== null ? round($get('performance_score', 'avg'), 2) : null,
@@ -945,7 +948,7 @@ class LaborReportService
                     'idx' => $idx,
                     'store_id' => (int) $week->store_id,
                     'total_payroll' => $week->total_payroll !== null ? (float) $week->total_payroll : null,
-                    'labor_percent' => $week->labor_percent !== null ? round((float) $week->labor_percent, 2) : null,
+                    'labor_percent' => $week->labor_percent !== null ? round((float) $week->labor_percent, self::PCT_DECIMALS) : null,
                     'has_metrics' => isset($covered[$idx][$week->store_id]),
                 ];
             })
@@ -967,7 +970,7 @@ class LaborReportService
 
         $labor = $payroll->pluck('labor_percent')->filter(fn ($v) => $v !== null);
         if ($values['average_labor_percent'] === null && $labor->isNotEmpty()) {
-            $values['average_labor_percent'] = round($labor->avg(), 2);
+            $values['average_labor_percent'] = round($labor->avg(), self::PCT_DECIMALS);
         }
 
         return $values;
@@ -1005,7 +1008,7 @@ class LaborReportService
         $avgHeadcount = ($activeStart + $activeEnd) / 2;
 
         $turnoverRate = $avgHeadcount > 0
-            ? round(($separations / $avgHeadcount) * 100, 2)
+            ? round(($separations / $avgHeadcount) * 100, self::PCT_DECIMALS)
             : ($separations > 0 ? 100.0 : 0.0);
 
         $labor = $metrics['labor']['avg'] ?? null;
@@ -1020,7 +1023,7 @@ class LaborReportService
             'total_hours' => $metrics['total_hours']['sum'] ?? null,
             'average_hourly_pay' => $metrics['hourly_pay']['avg'] ?? null,
             'total_gross_pay' => $metrics['gross_pay']['sum'] ?? null,
-            'average_labor_percent' => $labor !== null ? round($labor * 100, 2) : null,
+            'average_labor_percent' => $labor !== null ? round($labor * 100, self::PCT_DECIMALS) : null,
             'total_sales' => $metrics['sales']['sum'] ?? null,
             'average_performance_score' => $metrics['performance_score']['avg'] ?? null,
         ];
@@ -1039,7 +1042,7 @@ class LaborReportService
                 $average = $averages[$key] ?? null;
 
                 $delta = ($current !== null && $average !== null && (float) $average !== 0.0)
-                    ? round((($current - $average) / abs($average)) * 100, 2)
+                    ? round((($current - $average) / abs($average)) * 100, self::PCT_DECIMALS)
                     : null;
 
                 return [

@@ -142,7 +142,7 @@ class LaborRangeReportTest extends TestCase
             'by_position' => [['position' => 'Cook', 'count' => 1]],
         ], $combined['headcount']);
         $this->assertSame(Arr::except($week['headcount'], ['active_start_of_week', 'active_end_of_week']), Arr::except($combined['headcount'], ['active_start', 'active_end']));
-        $this->assertSame(66.67, $combined['turnover']['turnover_rate_percent']);
+        $this->assertSame(66.667, $combined['turnover']['turnover_rate_percent']);
         $this->assertEquals($week['turnover'], $combined['turnover']);
 
         // Bob: 55h in his 28 days (13.75/week) vs the store's 121h for 1 active (30.25), but 90 vs 85 performance.
@@ -157,7 +157,7 @@ class LaborRangeReportTest extends TestCase
 
         $this->assertEquals([
             'headcount_start' => 2, 'headcount_end' => 1, 'new_hires' => 0, 'separations' => 1, 'notable_departures' => 1,
-            'turnover_rate_percent' => 66.67, 'avg_weekly_gross_pay' => null, 'avg_weekly_hours' => 111,
+            'turnover_rate_percent' => 66.667, 'avg_weekly_gross_pay' => null, 'avg_weekly_hours' => 111,
             'employee_weeks_over_40' => 2, 'employee_weeks_over_60' => 1,
         ], $combined['summary']);
         $this->assertSame($week['summary']['notable_departures_this_week'], $combined['summary']['notable_departures']);
@@ -200,7 +200,7 @@ class LaborRangeReportTest extends TestCase
         // Store 2: Cy and Dee (moved in 10-15) on both ends; 4 → 3 together.
         $this->assertSame([2, 2], [$range['by_store']['03795-00042']['headcount']['active_start'], $range['by_store']['03795-00042']['headcount']['active_end']]);
         $this->assertSame([4, 3, 1], [$combined['headcount']['active_start'], $combined['headcount']['active_end'], $combined['headcount']['separations']]);
-        $this->assertSame(28.57, $combined['turnover']['turnover_rate_percent']);
+        $this->assertSame(28.571, $combined['turnover']['turnover_rate_percent']);
         $this->assertSame(0.0, (float) $range['by_store']['03795-00042']['turnover']['turnover_rate_percent']);
 
         $this->assertSame(['Ann Lee', 'Bob Ray', 'Cy Fox'], array_column($combined['overtime']['over_40'], 'name'));
