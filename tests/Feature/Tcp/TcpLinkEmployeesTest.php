@@ -139,6 +139,46 @@ class TcpLinkEmployeesTest extends TestCase
         $this->assertNull($this->tcpIdOf($second));
     }
 
+    public function test_ambiguous_rows_name_the_employees_they_matched(): void
+    {
+        $first = $this->employee('Marco', 'Rossi');
+        $second = $this->employee('Marco', 'Rossi');
+        $this->tcp->seed('5896', ['firstName' => 'Marco', 'lastName' => 'Rossi', 'location' => '03795-00001']);
+
+        $this->artisan('tcp:link-employees', ['--check' => true])
+            ->expectsOutputToContain("employee ids {$first->id}, {$second->id}")
+            ->assertSuccessful();
+    }
+
+    public function test_an_inactive_employee_is_not_matched_or_counted(): void
+    {
+        $marco = $this->employee('Marco', 'Rossi');
+        \App\Models\EmployeeStatusHistory::query()->create([
+            'employee_id' => $marco->id, 'status' => 'terminated', 'effective_date' => '2026-03-01',
+        ]);
+        $this->tcp->seed('5896', ['firstName' => 'Marco', 'lastName' => 'Rossi', 'location' => '03795-00001']);
+
+        // Not matched by name: the terminated employee is out of the running,
+        // so the TCP person is reported as matching nobody.
+        // Not matched by name: the terminated employee is out of the running,
+        // so the TCP person is reported as matching nobody.
+        $this->artisan('tcp:link-employees')
+            ->expectsOutputToContain('No match in our employees: 1')
+            ->assertSuccessful();
+
+        $this->assertNull($this->tcpIdOf($marco));
+    }
+
+    public function test_a_person_terminated_in_tcp_is_skipped(): void
+    {
+        $marco = $this->employee('Marco', 'Rossi');
+        $this->tcp->seed('5896', ['firstName' => 'Marco', 'lastName' => 'Rossi', 'location' => '03795-00001', 'terminationDate' => '2026-02-01']);
+
+        $this->artisan('tcp:link-employees')->assertSuccessful();
+
+        $this->assertNull($this->tcpIdOf($marco));
+    }
+
     public function test_two_tcp_people_for_one_employee_links_neither(): void
     {
         $marco = $this->employee('Marco', 'Rossi');

@@ -5,8 +5,10 @@ namespace App\Console\Commands;
 use App\Models\Employee;
 use App\Models\ExternalIdType;
 use App\Services\Tcp\TcpEmployeeClientInterface;
+use App\Services\Tcp\TcpEmployeeMapper;
 use App\Services\Tcp\TcpEmployeeSyncService;
 use Illuminate\Console\Command;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
@@ -28,6 +30,9 @@ use Illuminate\Support\Str;
  * employees for one TCP person, or an employee who already carries a different
  * TCP id are all reported and left alone; so is anyone nothing matched.
  *
+ * Active people only: only active employees are matched and counted, and TCP
+ * people terminated in TCP are skipped. Existing links are respected either way.
+ *
  * Operations learns the id from the employee event, not from this table, so run
  * with --republish (or hiring:republish-employees) afterwards.
  */
@@ -41,7 +46,7 @@ class LinkTcpEmployeesCommand extends Command
 
     protected $description = 'Match TCP employees to ours and store their TCP ids (read-only against TCP)';
 
-    public function handle(TcpEmployeeClientInterface $tcp, TcpEmployeeSyncService $sync): int
+    public function handle(TcpEmployeeClientInterface $tcp, TcpEmployeeSyncService $sync, TcpEmployeeMapper $mapper): int
     {
         $check = (bool) $this->option('check');
 
@@ -55,11 +60,16 @@ class LinkTcpEmployeesCommand extends Command
 
         $this->info(sprintf('Fetched %d TCP employee(s).', $remote->count()));
 
-        $locals = Employee::query()->with(['contacts', 'stores.store', 'ids.idType'])->get();
+        $all = Employee::query()->with(['contacts', 'stores.store', 'ids.idType', 'statusHistories'])->get();
 
-        $tcpIdOf = $locals->mapWithKeys(fn (Employee $e) => [$e->id => $this->tcpIdOf($e)])->filter();
+        // Every stored link counts as taken, active or not — but only ACTIVE
+        // employees are matched and reported. An inactive one is never
+        // scheduled, so its missing TCP id is not worth chasing.
+        $tcpIdOf = $all->mapWithKeys(fn (Employee $e) => [$e->id => $this->tcpIdOf($e)])->filter();
         $holderOf = $tcpIdOf->flip();
+        $locals = $all->filter(fn (Employee $e) => $mapper->isActive($e))->values();
         $byName = $locals->groupBy(fn (Employee $e) => $this->name($e->first_name, $e->last_name));
+        $terminatedInTcp = 0;
 
         $claims = [];
         $alreadyLinked = 0;
@@ -80,6 +90,12 @@ class LinkTcpEmployeesCommand extends Command
                 continue;
             }
 
+            if ($this->terminated($row)) {
+                $terminatedInTcp++;
+
+                continue;
+            }
+
             $candidates = $this->candidates($row, $locals, $byName);
 
             if ($candidates->isEmpty()) {
@@ -89,7 +105,7 @@ class LinkTcpEmployeesCommand extends Command
             }
 
             if ($candidates->count() > 1) {
-                $ambiguous[] = [$row, $candidates->pluck('id')->all()];
+                $ambiguous[] = [$row, $candidates->map(fn (array $match) => $match[0]->id)->all()];
 
                 continue;
             }
@@ -130,12 +146,13 @@ class LinkTcpEmployeesCommand extends Command
 
         $this->table(['metric', 'count'], [
             ['TCP people already linked to an employee', $alreadyLinked],
+            ['TCP people terminated in TCP (skipped)', $terminatedInTcp],
             [$check ? 'would link by exportCode' : 'linked by exportCode', $byMethod['exportCode'] ?? 0],
             [$check ? 'would link by name + store/email' : 'linked by name + store/email', $byMethod['name'] ?? 0],
             ['ambiguous (not linked)', count($ambiguous)],
             ['employee already has a different TCP id (not linked)', count($conflicts)],
             ['TCP people nothing matched', count($unmatched)],
-            ['our employees still without a TCP id', $locals->count() - $tcpIdOf->count() - count($toLink)],
+            ['active employees still without a TCP id', $locals->filter(fn (Employee $e) => !$tcpIdOf->has($e->id))->count() - count($toLink)],
         ]);
 
         $this->listRows('Ambiguous', collect($ambiguous), fn ($m) => $this->describe($m[0]) . ' -> employee ids ' . implode(', ', $m[1]));
@@ -201,6 +218,22 @@ class LinkTcpEmployeesCommand extends Command
         $row = $employee->ids->first(fn ($id) => $id->idType?->label === ExternalIdType::PAYCHEX && filled($id->id_value));
 
         return $row === null ? null : trim((string) $row->id_value);
+    }
+
+    /** A TCP record whose terminationDate is today or earlier. */
+    private function terminated(array $row): bool
+    {
+        $date = $row['terminationDate'] ?? null;
+
+        if (blank($date)) {
+            return false;
+        }
+
+        try {
+            return Carbon::parse((string) $date)->startOfDay()->lte(today());
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     private function name(?string $first, ?string $last): string
