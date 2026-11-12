@@ -158,12 +158,12 @@ class TcpLinkEmployeesTest extends TestCase
         ]);
         $this->tcp->seed('5896', ['firstName' => 'Marco', 'lastName' => 'Rossi', 'location' => '03795-00001']);
 
-        // Not matched by name: the terminated employee is out of the running,
-        // so the TCP person is reported as matching nobody.
+        // Not linked: the employee is terminated here, so the TCP person is
+        // reported as active in TCP but inactive in HiringPizza.
         // Not matched by name: the terminated employee is out of the running,
         // so the TCP person is reported as matching nobody.
         $this->artisan('tcp:link-employees')
-            ->expectsOutputToContain('No match in our employees: 1')
+            ->expectsOutputToContain('Active in TCP but inactive in HiringPizza (terminate in TCP, or rehire here): 1')
             ->assertSuccessful();
 
         $this->assertNull($this->tcpIdOf($marco));
@@ -177,6 +177,131 @@ class TcpLinkEmployeesTest extends TestCase
         $this->artisan('tcp:link-employees')->assertSuccessful();
 
         $this->assertNull($this->tcpIdOf($marco));
+    }
+
+    /**
+     * The kinds of misspelling seen between HiringPizza and TCP (made-up
+     * names): a vowel or doubled letter, a surname split in two, a middle
+     * name, second surname or "Jr" on one side only. Each must link on its
+     * own in the same store, with none crossing over to another pair.
+     */
+    public function test_the_same_person_spelled_differently_is_linked(): void
+    {
+        $pairs = [
+            ['Hasan', 'Albaker', 'hassan', 'Al Baker'],
+            ['Lina', 'Saad', 'Lena', 'Saad'],
+            ['Tarek', 'Malik', 'Tarek', 'mallik'],
+            ['Omer', 'Haddad', 'omar', 'haddad'],
+            ['Fadi', 'Nassim', 'Fadi', 'Nassem'],
+            ['Carlos', 'Ortiz Ortiz', 'Carlos', 'Ortiz'],
+            ['Nabil', 'Albazi', 'Nabil', 'Albezi'],
+            ['Hani', 'Maqdisi', 'Hadi', 'Makdisi'],
+            ['Daniela', 'Lopez', 'Daniela', 'Lopez Herrera'],
+            ['Karim', 'Bitar Nasser', 'karim', 'Nasser'],
+            ['Megan', 'Fields', 'Magan', 'Fields'],
+            ['victoria', 'Shamoun', 'Viktorya', 'Shamoun'],
+            ['Walid', 'Sharif', 'Walid', 'Sharf'],
+            ['Rosa', 'Maria Delgado', 'Rosa', 'Delgado'],
+            ['Mark', 'Green', 'MARK ALLEN', 'THOMAS GREEN'],
+            ['Leon', 'Carter', 'LEON BRYCE', 'CARTER JR'],
+            ['Pedro', 'garcia', 'Pedro', 'Garcia Jr'],
+            ['Kevin', 'McCarthy', 'Kevin', 'McCrathy'],
+            ['Dustin', 'Fairbanks', 'Dusin', 'Fairbanks'],
+            ['Luis M', 'Ortega', 'Luis M', 'Vargas Ortega'],
+            ['Grace', 'Lindqvist', 'Grace Ann', 'Lindqvist'],
+        ];
+
+        $employees = [];
+
+        foreach ($pairs as $i => [$first, $last, $tcpFirst, $tcpLast]) {
+            $employees[$i] = $this->employee($first, $last);
+            $this->tcp->seed((string) (7000 + $i), ['firstName' => $tcpFirst, 'lastName' => $tcpLast, 'location' => '03795-00001']);
+        }
+
+        $this->artisan('tcp:link-employees')->assertSuccessful();
+
+        foreach ($pairs as $i => $pair) {
+            $this->assertSame((string) (7000 + $i), $this->tcpIdOf($employees[$i]), "{$pair[0]} {$pair[1]} should link to {$pair[2]} {$pair[3]}");
+        }
+    }
+
+    public function test_a_close_name_in_another_store_is_not_linked(): void
+    {
+        $hasan = $this->employee('Hasan', 'Albaker');
+        $this->tcp->seed('7001', ['firstName' => 'hassan', 'lastName' => 'Al Baker', 'location' => '03795-00002']);
+
+        $this->artisan('tcp:link-employees')->assertSuccessful();
+
+        $this->assertNull($this->tcpIdOf($hasan));
+    }
+
+    public function test_relatives_sharing_a_surname_are_not_linked(): void
+    {
+        $tarek = $this->employee('Tarek', 'Nassar');
+        $this->tcp->seed('7001', ['firstName' => 'Rami', 'lastName' => 'Nassar', 'location' => '03795-00001']);
+        $this->tcp->seed('7002', ['firstName' => 'Walid', 'lastName' => 'Nassar', 'location' => '03795-00001']);
+
+        $this->artisan('tcp:link-employees')->assertSuccessful();
+
+        $this->assertNull($this->tcpIdOf($tarek));
+    }
+
+    public function test_a_close_name_with_a_different_email_is_not_linked(): void
+    {
+        // "Fadi" and "Hadi" are one letter apart and could be brothers.
+        $fadi = $this->employee('Fadi', 'Nassar', 'fadi@example.com');
+        $this->tcp->seed('7001', ['firstName' => 'Hadi', 'lastName' => 'Nassar', 'location' => '03795-00001', 'email' => 'hadi@example.com']);
+
+        $this->artisan('tcp:link-employees')->assertSuccessful();
+
+        $this->assertNull($this->tcpIdOf($fadi));
+    }
+
+    public function test_a_close_name_with_the_same_email_is_linked(): void
+    {
+        $lina = $this->employee('Lina', 'Saad', 'lina@example.com');
+        $this->tcp->seed('7001', ['firstName' => 'Lena', 'lastName' => 'Saad', 'location' => '03795-00001', 'email' => 'LINA@example.com']);
+
+        $this->artisan('tcp:link-employees')->assertSuccessful();
+
+        $this->assertSame('7001', $this->tcpIdOf($lina));
+    }
+
+    public function test_two_close_employees_for_one_tcp_person_link_neither(): void
+    {
+        $omer = $this->employee('Omer', 'Haddad');
+        $omar = $this->employee('Ommer', 'Haddad');
+        $this->tcp->seed('7001', ['firstName' => 'omar', 'lastName' => 'haddad', 'location' => '03795-00001']);
+
+        $this->artisan('tcp:link-employees')->assertSuccessful();
+
+        $this->assertNull($this->tcpIdOf($omer));
+        $this->assertNull($this->tcpIdOf($omar));
+    }
+
+    public function test_the_csv_lists_every_kind_of_problem(): void
+    {
+        $hasan = $this->employee('Hasan', 'Albaker');
+        $nobody = $this->employee('Gordon', 'Pryce');
+        $this->tcp->seed('7001', ['firstName' => 'hassan', 'lastName' => 'Al Baker', 'location' => '03795-00001']);
+        $this->tcp->seed('7002', ['firstName' => 'Yusuf', 'lastName' => 'Darwish', 'location' => '03795-00001']);
+
+        $path = tempnam(sys_get_temp_dir(), 'tcp-issues');
+
+        $this->artisan('tcp:link-employees', ['--check' => true, '--csv' => $path])->assertSuccessful();
+
+        $rows = array_map('str_getcsv', array_filter(explode("\n", (string) file_get_contents($path))));
+        @unlink($path);
+
+        $byIssue = collect(array_slice($rows, 1))->groupBy(0);
+
+        $this->assertSame('hassan Al Baker', $byIssue['name spelled differently'][0][5]);
+        $this->assertSame((string) $hasan->id, $byIssue['name spelled differently'][0][1]);
+        $this->assertSame((string) $nobody->id, $byIssue['active here, no TCP match'][0][1]);
+        $this->assertSame('7002', $byIssue['active in TCP, not in HiringPizza'][0][4]);
+
+        // Check mode wrote nothing.
+        $this->assertNull($this->tcpIdOf($hasan));
     }
 
     public function test_two_tcp_people_for_one_employee_links_neither(): void
