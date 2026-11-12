@@ -230,10 +230,9 @@ class LaborReportService
         $trendRows = $this->metricStats($storeIds, $weekWindows, $this->resolveColumnIds(self::HIGHLIGHT_COLUMN_KEYS))
             ->groupBy('idx')
             ->map(fn (Collection $rows) => $rows->groupBy('store_id'));
-        // The payroll weeks model: each store-week's total payroll (final labor
-        // is that ÷ royalty obligation, worked out by the caller). A store-week
-        // with no employee metrics also returns its payroll sheet figures in
-        // their place.
+        // The payroll weeks model: a store-week with no employee metrics returns
+        // its payroll sheet figures in their place. (Final labor reads payroll
+        // per store-week from GET /v1/reports/payroll-weeks.)
         $laborRows = $this->finalLaborRows($storeIds, $weeks);
         $payrollWeeks = $this->payrollWeeks($storeIds, $weeks, $laborRows);
         // The weeks the report is about: every week of a range, or the one week.
@@ -241,7 +240,7 @@ class LaborReportService
 
         $block = function (?int $storeId, bool $withLists) use (
             $from, $to, $weeks, $range, $members, $activeAt, $moves, $turnoverEvents, $rangeStoreRows,
-            $overtimeRows, $positions, $tenureRows, $trendRows, $laborRows, $payrollWeeks, $mainWeeks, $allColumnIds
+            $overtimeRows, $positions, $tenureRows, $trendRows, $payrollWeeks, $mainWeeks, $allColumnIds
         ): array {
             $inStore = fn (Collection $items) => $storeId === null
                 ? $items
@@ -340,7 +339,6 @@ class LaborReportService
 
             if ($range) {
                 $result['pay'] = $this->payBlock($rangeStats);
-                $result['final_labor'] = $this->finalLabor($weeks, $storePayroll);
             }
 
             return $result;
@@ -387,15 +385,21 @@ class LaborReportService
             ->values();
     }
 
-    /** Names, store and position on each row; most hours first, then name order. */
+    /**
+     * Names, store and position on each row; most hours first, then name order.
+     * Metrics can sit under an id with no employee record (a data issue —
+     * e.g. #447 on live): those hours stay, with no name, sorted after the
+     * named ones, instead of failing the whole report.
+     */
     private function decorateOvertime(Collection $rows, Collection $employees, Collection $positions, array $stores): Collection
     {
         $rank = $employees->keys()->flip();
+        $last = $rank->count();
 
         return $rows
             ->map(fn (array $row) => [
                 'employee_id' => $row['employee_id'],
-                'name' => $this->fullName($employees->get($row['employee_id'])),
+                'name' => $employees->has($row['employee_id']) ? $this->fullName($employees->get($row['employee_id'])) : null,
                 'store' => $stores[$row['store_id']],
                 'position' => $positions->get($row['employee_id']),
                 'week_start' => $row['week_start'],
@@ -404,7 +408,7 @@ class LaborReportService
                 'overtime_hours' => round($row['total_hours'] - self::OVERTIME_HOURS_THRESHOLD, 2),
                 'store_id' => $row['store_id'],
             ])
-            ->sort(fn (array $a, array $b) => [$b['total_hours'], $rank[$a['employee_id']]] <=> [$a['total_hours'], $rank[$b['employee_id']]])
+            ->sort(fn (array $a, array $b) => [$b['total_hours'], $rank[$a['employee_id']] ?? $last] <=> [$a['total_hours'], $rank[$b['employee_id']] ?? $last])
             ->values();
     }
 
@@ -899,25 +903,6 @@ class LaborReportService
         $windows = array_map(fn (array $week, int $i) => $this->window($i, $week[0], $week[1], $asOf), $weeks, array_keys($weeks));
 
         return $this->metricStats($storeIds, $windows, $this->resolveColumnIds(['labor']))->groupBy('idx');
-    }
-
-    /**
-     * Each week's total payroll from the payroll weeks model (one store's, or
-     * the stores' added up); null for a week the model has no payroll for.
-     * Final labor is this ÷ the week's royalty obligation × 100 — the caller
-     * divides, store-week by store-week, so weeks without payroll are left out.
-     */
-    private function finalLabor(array $weeks, Collection $payroll): array
-    {
-        return array_map(function (array $week, int $i) use ($payroll) {
-            $totals = $payroll->where('idx', $i)->pluck('total_payroll')->filter(fn ($v) => $v !== null);
-
-            return [
-                'week_start' => $week[0]->toDateString(),
-                'week_end' => $week[1]->toDateString(),
-                'payroll' => $totals->isNotEmpty() ? round((float) $totals->sum(), 2) : null,
-            ];
-        }, $weeks, array_keys($weeks));
     }
 
     /**

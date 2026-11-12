@@ -72,6 +72,11 @@ Route::prefix('v1')->middleware(['throttle:api', 'auth.token.store'])->group(fun
         ->middleware('throttle:api-heavy-multi')
         ->name('api.v1.reports.labor');
 
+    // Total payroll per store and week (payroll weeks model) — Business Reports'
+    // final labor. Literal path, so it must stay above reports/{store}/{date}.
+    Route::get('reports/payroll-weeks', [LaborController::class, 'payrollWeeks'])
+        ->name('api.v1.reports.payroll-weeks');
+
     // Combined manager-dashboard page report (one call instead of three).
     Route::get('reports/{store}/{date}', [ManagerDashboardController::class, 'reports'])
         ->where(['date' => '[0-9]{4}-[0-9]{2}-[0-9]{2}'])
