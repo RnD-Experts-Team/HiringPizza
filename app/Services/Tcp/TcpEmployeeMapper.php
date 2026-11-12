@@ -5,6 +5,7 @@ namespace App\Services\Tcp;
 use App\Enums\EmployeeStatus;
 use App\Enums\EmploymentType;
 use App\Models\Employee;
+use App\Models\ExternalIdType;
 use App\Models\Store;
 use App\Models\TcpStoreRole;
 use App\Support\UsState;
@@ -88,12 +89,22 @@ class TcpEmployeeMapper
             // TCP requires hireDate and defaultJobCode on create.
             $payload['hireDate'] = $hireDate ?? now()->toDateString();
             $payload['defaultJobCode'] = (int) $this->defaultJobCode($employee, $store, $jobCodeCatalog);
+        }
 
-            // TCP's field for carrying an id from an external system — OUR
-            // employee id. This (not employeeId, which we now pick ourselves)
-            // is what lets a timed-out create be recognised on retry, by
-            // scanning the roster in TcpEmployeeSyncService::resolveRemoteId.
-            $payload['exportCode'] = (string) $employee->id;
+        // TCP's field for carrying an id from an external system: the Paychex
+        // ID when the employee has one, so TCP's payroll export lines up with
+        // Paychex; otherwise OUR employee id, as before. Either way it (not
+        // employeeId, which we pick ourselves) is what lets a timed-out create
+        // be recognised on retry — TcpEmployeeSyncService::resolveRemoteId
+        // scans the roster for both values.
+        //
+        // On an edit it is sent only when there IS a Paychex ID: with none,
+        // the record keeps whatever exportCode it already has — ours if we
+        // created it, or whatever a record we adopted came with.
+        $paychexId = $this->paychexId($employee);
+
+        if ($forCreate || $paychexId !== null) {
+            $payload['exportCode'] = $paychexId ?? (string) $employee->id;
         }
 
         // middleName is deliberately absent: TCP's schema has no such field
@@ -174,6 +185,16 @@ class TcpEmployeeMapper
     public function candidateEmployeeId(Employee $employee, int $attempt = 0): int
     {
         return (int) config('tcp.employee_id_offset') + ((int) $employee->id * 100) + $attempt;
+    }
+
+    /** The employee's Paychex ID (id_types label "Paychex ID"), or null if they have none. */
+    public function paychexId(Employee $employee): ?string
+    {
+        $value = $employee->ids
+            ->first(fn ($id) => $id->idType?->label === ExternalIdType::PAYCHEX && filled($id->id_value))
+            ?->id_value;
+
+        return $value === null ? null : trim((string) $value);
     }
 
     public function currentStatus(Employee $employee): ?string

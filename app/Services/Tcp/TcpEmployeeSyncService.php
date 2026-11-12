@@ -26,7 +26,7 @@ use Illuminate\Support\Facades\Log;
  * exceptional, and createWithRetry() below tries the next candidate when TCP
  * rejects one. Idempotency across a *timed-out* create (a different problem —
  * the response never arrived, so we don't know if it landed) still comes from
- * `exportCode` (= our employee id): resolveRemoteId() recovers that case by
+ * `exportCode` (= the Paychex ID, else our employee id): resolveRemoteId() recovers that case by
  * scanning the roster — TCP, like Humanity, has no bulk delete to undo a
  * duplicate with.
  */
@@ -159,11 +159,16 @@ class TcpEmployeeSyncService
      * Find this employee in TCP, if they are already there.
      *
      * Checks our stored link first, then scans the roster for an exportCode
-     * equal to our employee id. That second step is what recovers from a
-     * create that timed out but actually landed — the failure mode TCP's
-     * lack of an idempotency key leaves open. It only runs when no stored
-     * link exists (i.e. on creates, which are rare), so the extra roster
-     * read is a non-issue for the quota.
+     * equal to this employee's Paychex ID or our employee id — the two values
+     * TcpEmployeeMapper puts there, Paychex first. That second step is what
+     * recovers from a create that timed out but actually landed — the
+     * failure mode TCP's lack of an idempotency key leaves open. It only
+     * runs when no stored link exists (i.e. on creates, which are rare), so
+     * the extra roster read is a non-issue for the quota.
+     *
+     * Paychex ids and our ids are both small numbers, so one employee's
+     * Paychex ID can equal another's employee id. A record already linked to
+     * a DIFFERENT employee is therefore never adopted.
      */
     private function resolveRemoteId(Employee $employee): ?string
     {
@@ -173,20 +178,45 @@ class TcpEmployeeSyncService
             return $stored;
         }
 
-        $ourId = (string) $employee->id;
+        $wanted = array_values(array_unique(array_filter([
+            $this->mapper->paychexId($employee),
+            (string) $employee->id,
+        ], fn ($value) => $value !== null && $value !== '')));
 
-        foreach ($this->client->listEmployees() as $record) {
-            if ((string) ($record['exportCode'] ?? '') === $ourId) {
+        $roster = $this->client->listEmployees();
+
+        foreach ($wanted as $code) {
+            foreach ($roster as $record) {
+                if ((string) ($record['exportCode'] ?? '') !== $code) {
+                    continue;
+                }
+
+                $tcpId = $this->idFrom($record);
+
+                if ($this->tcpIdHeldByAnother($employee, $tcpId)) {
+                    continue;
+                }
+
                 Log::info('Adopting an existing TCP employee found by exportCode', [
                     'employee_id' => $employee->id,
-                    'tcp_employee_id' => $record['employeeId'] ?? $record['id'] ?? null,
+                    'export_code' => $code,
+                    'tcp_employee_id' => $tcpId,
                 ]);
 
-                return $this->idFrom($record);
+                return $tcpId;
             }
         }
 
         return null;
+    }
+
+    private function tcpIdHeldByAnother(Employee $employee, string $tcpId): bool
+    {
+        return EmployeeId::query()
+            ->where('employee_id', '!=', $employee->id)
+            ->where('id_value', $tcpId)
+            ->whereHas('idType', fn ($query) => $query->where('label', ExternalIdType::TCP))
+            ->exists();
     }
 
     /**

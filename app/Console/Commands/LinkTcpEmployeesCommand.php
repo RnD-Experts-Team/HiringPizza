@@ -16,8 +16,10 @@ use Illuminate\Support\Str;
  * written to TCP: this only issues GETs, and works with TCP_WRITES_ENABLED=false.
  *
  * Matching, in order:
- *   1. exportCode — the field we fill with our own employee id when WE create
- *      someone in TCP.
+ *   1. exportCode — the field we fill with the employee's Paychex ID (or, when
+ *      they have none, our own employee id) when WE push someone to TCP. A
+ *      code that is one employee's Paychex ID and another's employee id
+ *      matches both, so it is reported as ambiguous rather than guessed.
  *   2. Same first + last name AND (the TCP `location` is one of the employee's
  *      store numbers, OR the email is the same) — for people who were in TCP
  *      before we ever pushed.
@@ -164,11 +166,15 @@ class LinkTcpEmployeesCommand extends Command
     {
         $exportCode = (string) ($row['exportCode'] ?? '');
 
-        if ($exportCode !== '' && ctype_digit($exportCode)) {
-            $employee = $locals->firstWhere('id', (int) $exportCode);
+        if ($exportCode !== '') {
+            $byExportCode = $locals
+                ->filter(fn (Employee $e) => $this->paychexIdOf($e) === $exportCode
+                    || (ctype_digit($exportCode) && $e->id === (int) $exportCode))
+                ->map(fn (Employee $e) => [$e, 'exportCode'])
+                ->values();
 
-            if ($employee !== null) {
-                return collect([[$employee, 'exportCode']]);
+            if ($byExportCode->isNotEmpty()) {
+                return $byExportCode;
             }
         }
 
@@ -188,6 +194,13 @@ class LinkTcpEmployeesCommand extends Command
         $row = $employee->ids->first(fn ($id) => $id->idType?->label === ExternalIdType::TCP && filled($id->id_value));
 
         return $row === null ? null : (string) $row->id_value;
+    }
+
+    private function paychexIdOf(Employee $employee): ?string
+    {
+        $row = $employee->ids->first(fn ($id) => $id->idType?->label === ExternalIdType::PAYCHEX && filled($id->id_value));
+
+        return $row === null ? null : trim((string) $row->id_value);
     }
 
     private function name(?string $first, ?string $last): string

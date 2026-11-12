@@ -71,6 +71,32 @@ class TcpLinkEmployeesTest extends TestCase
         $this->assertSame('5896', $this->tcpIdOf($marco));
     }
 
+    public function test_links_by_a_paychex_export_code(): void
+    {
+        $marco = $this->employee('Marco', 'Rossi');
+        $paychex = IdType::query()->firstOrCreate(['label' => ExternalIdType::PAYCHEX]);
+        EmployeeId::query()->create(['employee_id' => $marco->id, 'id_type_id' => $paychex->id, 'id_value' => '00412']);
+        $this->tcp->seed('5896', ['firstName' => 'Someone', 'lastName' => 'Else', 'exportCode' => '00412']);
+
+        $this->artisan('tcp:link-employees')->assertSuccessful();
+
+        $this->assertSame('5896', $this->tcpIdOf($marco));
+    }
+
+    public function test_an_export_code_that_is_one_paychex_id_and_another_employee_id_is_not_linked(): void
+    {
+        $marco = $this->employee('Marco', 'Rossi');
+        $luca = $this->employee('Luca', 'Bianchi');
+        $paychex = IdType::query()->firstOrCreate(['label' => ExternalIdType::PAYCHEX]);
+        EmployeeId::query()->create(['employee_id' => $luca->id, 'id_type_id' => $paychex->id, 'id_value' => (string) $marco->id]);
+        $this->tcp->seed('5896', ['firstName' => 'Someone', 'lastName' => 'Else', 'exportCode' => (string) $marco->id]);
+
+        $this->artisan('tcp:link-employees')->assertSuccessful();
+
+        $this->assertNull($this->tcpIdOf($marco));
+        $this->assertNull($this->tcpIdOf($luca));
+    }
+
     public function test_links_by_name_and_store(): void
     {
         $marco = $this->employee('Marco', 'Rossi');
