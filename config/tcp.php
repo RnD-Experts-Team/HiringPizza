@@ -63,7 +63,7 @@ return [
      | parts removed. Comma-separated, case-insensitive.
      */
     'position_variant_suffixes' => array_values(array_filter(array_map('trim',
-        explode(',', (string) env('TCP_POSITION_VARIANT_SUFFIXES', 'AT'))))),
+        explode(',', (string) env('TCP_POSITION_VARIANT_SUFFIXES', 'AT,Management Trainee'))))),
 
     /*
      | Whether WE assign employeeId on create, vs leaving it out and letting
