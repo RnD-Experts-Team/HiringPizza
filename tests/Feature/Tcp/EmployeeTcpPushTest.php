@@ -452,6 +452,76 @@ class EmployeeTcpPushTest extends TestCase
             ->existingTcpId($employee));
     }
 
+    public function test_the_paychex_id_is_sent_as_the_export_code_on_create(): void
+    {
+        $employee = app(EmployeeWorkflowService::class)->create($this->store, $this->payload([
+            'employee_ids' => [['id_type_id' => $this->paychexTypeId(), 'id_value' => '00412']],
+        ]));
+
+        $remote = array_values($this->tcp->employees)[0];
+
+        $this->assertSame('00412', $remote['exportCode']);
+        $this->assertNotSame((string) $employee->id, $remote['exportCode']);
+    }
+
+    public function test_adding_a_paychex_id_on_edit_updates_the_export_code(): void
+    {
+        $employee = app(EmployeeWorkflowService::class)->create($this->store, $this->payload());
+        $remoteId = (string) array_key_first($this->tcp->employees);
+        $this->assertSame((string) $employee->id, $this->tcp->employees[$remoteId]['exportCode']);
+
+        EmployeeId::query()->create(['employee_id' => $employee->id, 'id_type_id' => $this->paychexTypeId(), 'id_value' => '00412']);
+
+        app(\App\Services\Tcp\TcpEmployeeSyncService::class)->upsert($employee->fresh(), $this->store);
+
+        $this->assertCount(1, $this->tcp->employees);
+        $this->assertSame('00412', $this->tcp->employees[$remoteId]['exportCode']);
+    }
+
+    public function test_an_edit_without_a_paychex_id_leaves_the_export_code_alone(): void
+    {
+        $employee = app(EmployeeWorkflowService::class)->create($this->store, $this->payload());
+        $employee->load(['statusHistories', 'contacts', 'addresses', 'positions.position', 'ids.idType']);
+
+        $payload = app(\App\Services\Tcp\TcpEmployeeMapper::class)
+            ->toPayload($employee, $this->store, forCreate: false);
+
+        $this->assertArrayNotHasKey('exportCode', $payload);
+    }
+
+    public function test_a_retried_push_adopts_a_record_found_by_paychex_export_code(): void
+    {
+        config(['tcp.writes_enabled' => false]);
+        $employee = app(EmployeeWorkflowService::class)->create($this->store, $this->payload([
+            'employee_ids' => [['id_type_id' => $this->paychexTypeId(), 'id_value' => '00412']],
+        ]));
+
+        $this->tcp->seed('9004321', ['exportCode' => '00412']);
+
+        config(['tcp.writes_enabled' => true]);
+        $tcpId = app(\App\Services\Tcp\TcpEmployeeSyncService::class)->upsert($employee, $this->store);
+
+        $this->assertSame('9004321', $tcpId);
+        $this->assertCount(1, $this->tcp->employees);
+    }
+
+    public function test_a_record_linked_to_another_employee_is_never_adopted_by_export_code(): void
+    {
+        // Paychex ids and our ids are both small numbers: this employee's
+        // Paychex ID equals another employee's own id, whose TCP record still
+        // carries that id as its exportCode.
+        $other = app(EmployeeWorkflowService::class)->create($this->store, $this->payload(['first_name' => 'Luca']));
+        $otherRemoteId = (string) array_key_first($this->tcp->employees);
+
+        $employee = app(EmployeeWorkflowService::class)->create($this->store, $this->payload([
+            'employee_ids' => [['id_type_id' => $this->paychexTypeId(), 'id_value' => (string) $other->id]],
+        ]));
+
+        $this->assertCount(2, $this->tcp->employees);
+        $this->assertNotSame($otherRemoteId, app(\App\Services\Tcp\TcpEmployeeSyncService::class)->existingTcpId($employee));
+        $this->assertSame('Luca', $this->tcp->employees[$otherRemoteId]['firstName']);
+    }
+
     public function test_writes_are_refused_while_the_flag_is_off(): void
     {
         // Nothing is pushed, and the employee is still created locally — this
@@ -560,6 +630,11 @@ class EmployeeTcpPushTest extends TestCase
         }
 
         $this->assertSame(0, Employee::count());
+    }
+
+    private function paychexTypeId(): int
+    {
+        return IdType::query()->firstOrCreate(['label' => ExternalIdType::PAYCHEX])->id;
     }
 
     private function positionId(string $label): int

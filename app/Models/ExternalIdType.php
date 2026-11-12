@@ -15,4 +15,10 @@ final class ExternalIdType
     public const TCP = 'TCP ID';
 
     public const HUMANITY = 'Humanity ID';
+
+    /**
+     * Sent to TCP as the employee's exportCode (see TcpEmployeeMapper::exportCode),
+     * so TCP's payroll export carries the Paychex id.
+     */
+    public const PAYCHEX = 'Paychex ID';
 }
