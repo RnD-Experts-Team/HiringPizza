@@ -392,11 +392,13 @@ class TcpEmployeeMapper
             return null;
         }
 
+        // One key closure returning [date, id], compared element by element.
+        // NOT sortBy([fn, fn]): an array of closures is treated as two-argument
+        // comparators, so one-argument key closures there sort nothing — and
+        // last() then returned the OLDEST row, i.e. someone's first status and
+        // first position instead of their current ones.
         return $collection
-            ->sortBy([
-                fn ($row) => optional($row->effective_date)?->timestamp ?? 0,
-                fn ($row) => (int) $row->id,
-            ])
+            ->sortBy(fn ($row) => [optional($row->effective_date)?->timestamp ?? 0, (int) $row->id])
             ->last();
     }
 }

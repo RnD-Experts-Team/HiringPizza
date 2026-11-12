@@ -522,6 +522,53 @@ class EmployeeTcpPushTest extends TestCase
         $this->assertSame('Luca', $this->tcp->employees[$otherRemoteId]['firstName']);
     }
 
+    public function test_the_current_position_and_status_are_the_latest_not_the_first(): void
+    {
+        // Promoted from Crew Member to Manager, then terminated: TCP must get
+        // the Manager job code and a termination date, not the first rows.
+        $employee = app(EmployeeWorkflowService::class)->create($this->store, $this->payload([
+            'positions' => [
+                ['position_id' => $this->positionId('Crew Member'), 'effective_date' => '2026-01-15'],
+                ['position_id' => $this->positionId('Manager'), 'effective_date' => '2026-02-01'],
+            ],
+            'status_history' => [
+                ['status' => 'hired', 'effective_date' => '2026-01-15'],
+                ['status' => 'terminated', 'effective_date' => '2026-03-01'],
+            ],
+        ]));
+
+        $remote = array_values($this->tcp->employees)[0];
+
+        $this->assertSame(37950103, $remote['defaultJobCode']);
+        $this->assertSame('2026-03-01', $remote['terminationDate']);
+        $this->assertSame('2026-01-15', $remote['hireDate']);
+    }
+
+    public function test_current_status_is_the_latest_effective_date_whatever_the_row_order(): void
+    {
+        $mapper = app(\App\Services\Tcp\TcpEmployeeMapper::class);
+        $row = fn (int $id, string $status, string $date) => (new \App\Models\EmployeeStatusHistory())
+            ->forceFill(['id' => $id, 'status' => $status, 'effective_date' => $date]);
+
+        foreach ([
+            [$row(1, 'hired', '2026-01-15'), $row(2, 'terminated', '2026-03-01'), $row(3, 'rehired', '2026-05-01')],
+            [$row(3, 'rehired', '2026-05-01'), $row(1, 'hired', '2026-01-15'), $row(2, 'terminated', '2026-03-01')],
+            [$row(2, 'terminated', '2026-03-01'), $row(3, 'rehired', '2026-05-01'), $row(1, 'hired', '2026-01-15')],
+            // Same date: the higher id wins.
+            [$row(5, 'rehired', '2026-05-01'), $row(4, 'terminated', '2026-05-01')],
+        ] as $rows) {
+            $employee = (new Employee())->setRelation('statusHistories', collect($rows));
+
+            $this->assertSame('rehired', $mapper->currentStatus($employee));
+            $this->assertTrue($mapper->isActive($employee));
+        }
+
+        $employee = (new Employee())->setRelation('statusHistories', collect([
+            $row(2, 'terminated', '2026-03-01'), $row(1, 'hired', '2026-01-15'),
+        ]));
+        $this->assertFalse($mapper->isActive($employee));
+    }
+
     public function test_writes_are_refused_while_the_flag_is_off(): void
     {
         // Nothing is pushed, and the employee is still created locally — this
