@@ -544,6 +544,32 @@ class EmployeeTcpPushTest extends TestCase
         $this->assertSame('2026-01-15', $remote['hireDate']);
     }
 
+    public function test_completing_a_separation_sends_the_termination_date_to_tcp(): void
+    {
+        // The dashboard's terminate/resign flow. TCP only learns someone left
+        // through terminationDate; without it the update succeeds silently
+        // and they stay clockable.
+        $employee = app(EmployeeWorkflowService::class)->create($this->store, $this->payload());
+        $tcpId = app(\App\Services\Tcp\TcpEmployeeSyncService::class)->existingTcpId($employee);
+        $this->assertArrayNotHasKey('terminationDate', $this->tcp->employees[$tcpId]);
+
+        $user = \App\Models\User::query()->create(['id' => 9, 'name' => 'Dana', 'email' => 'dana@example.com']);
+        $this->actingAs($user);
+
+        $separation = \App\Models\SeparationRequest::query()->create([
+            'store_id' => $this->store->id,
+            'user_id' => $user->id,
+            'employee_id' => $employee->id,
+            'separation_type' => 'resignation',
+            'final_working_day' => '2026-11-10',
+        ]);
+
+        app(\App\Services\SeparationRequestWorkflowService::class)
+            ->makeDecision($separation, ['decision' => 'completed']);
+
+        $this->assertSame('2026-11-10', $this->tcp->employees[$tcpId]['terminationDate']);
+    }
+
     public function test_current_status_is_the_latest_effective_date_whatever_the_row_order(): void
     {
         $mapper = app(\App\Services\Tcp\TcpEmployeeMapper::class);
