@@ -6043,6 +6043,11 @@
                         "type": "integer",
                         "nullable": true
                     },
+                    "secondary_shirt_color_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "The second-choice colour, ordered when shirt_color_id is not available. null on milestones submitted before this field existed."
+                    },
                     "shirt_logo_id": {
                         "type": "integer",
                         "nullable": true
@@ -6130,6 +6135,15 @@
                         ],
                         "nullable": true
                     },
+                    "secondary_shirt_color": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/ShirtColorEntity"
+                            }
+                        ],
+                        "nullable": true,
+                        "description": "The second-choice colour. null on milestones submitted before this field existed."
+                    },
                     "shirt_logo": {
                         "allOf": [
                             {
@@ -6168,12 +6182,17 @@
                 "type": "object",
                 "required": [
                     "shirt_color_id",
+                    "secondary_shirt_color_id",
                     "shirt_logo_id"
                 ],
                 "properties": {
                     "shirt_color_id": {
                         "type": "integer",
                         "description": "Must be an active shirt colour."
+                    },
+                    "secondary_shirt_color_id": {
+                        "type": "integer",
+                        "description": "The fallback colour, ordered when shirt_color_id is not available. Must be an active shirt colour and different from shirt_color_id."
                     },
                     "shirt_logo_id": {
                         "type": "integer",
