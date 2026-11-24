@@ -35,6 +35,7 @@ class ShirtMilestoneWorkflowService
         'employee.obsession:id,employee_id,t_shirt',
         'store',
         'shirtColor',
+        'secondaryShirtColor',
         'shirtLogo',
         'shirtTemplate',
         'createdByUser',
@@ -240,6 +241,10 @@ class ShirtMilestoneWorkflowService
 
         $milestone->update([
             'shirt_color_id' => $data['shirt_color_id'],
+            // Required by the request, so every real entry carries one. The
+            // `?? null` only spares callers that go through the service
+            // directly, as the existing tests do.
+            'secondary_shirt_color_id' => $data['secondary_shirt_color_id'] ?? null,
             'shirt_logo_id' => $data['shirt_logo_id'],
             'shirt_template_id' => $data['shirt_template_id'] ?? $this->resolveTemplateId($employee),
             // Snapshot the size and gender: the catalogue and the employee

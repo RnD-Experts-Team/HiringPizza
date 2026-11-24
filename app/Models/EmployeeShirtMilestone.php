@@ -49,6 +49,14 @@ class EmployeeShirtMilestone extends Model
         return $this->belongsTo(ShirtColor::class);
     }
 
+    /**
+     * The fallback colour, ordered when the first choice is not available.
+     */
+    public function secondaryShirtColor(): BelongsTo
+    {
+        return $this->belongsTo(ShirtColor::class, 'secondary_shirt_color_id');
+    }
+
     public function shirtLogo(): BelongsTo
     {
         return $this->belongsTo(ShirtLogo::class);

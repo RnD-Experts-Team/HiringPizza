@@ -27,6 +27,15 @@ class ShirtMilestoneEntryRequest extends FormRequest
                 'integer',
                 Rule::exists('shirt_colors', 'id')->where('is_active', true),
             ],
+            // The fallback when the first colour is not available. Required on
+            // every new entry; it must be a different colour or it would
+            // not be a fallback at all.
+            'secondary_shirt_color_id' => [
+                'required',
+                'integer',
+                'different:shirt_color_id',
+                Rule::exists('shirt_colors', 'id')->where('is_active', true),
+            ],
             'shirt_logo_id' => [
                 'required',
                 'integer',
@@ -71,6 +80,9 @@ class ShirtMilestoneEntryRequest extends FormRequest
     {
         return [
             'shirt_color_id.exists' => 'The selected shirt colour is not available.',
+            'secondary_shirt_color_id.required' => 'Pick a secondary colour, in case the first one is not available.',
+            'secondary_shirt_color_id.different' => 'The secondary colour must be different from the shirt colour.',
+            'secondary_shirt_color_id.exists' => 'The selected secondary colour is not available.',
             'shirt_logo_id.exists' => 'The selected logo is not available.',
             'shirt_template_id.exists' => 'The selected shirt template is not available.',
         ];
